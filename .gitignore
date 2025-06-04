@@ -5,3 +5,5 @@ dist/
 .idea/
 crash.log
 .env
+.vscode/
+.expo/
