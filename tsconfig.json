@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "target": "ES2022",
+        "noImplicitAny": false,
+        "sourceMap": true,
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "resolveJsonModule": true,
+        "esModuleInterop": true,
+        "types": ["node", "css-modules", "jest"],
+        "jsx": "react"
+    },"exclude": ["trash/**/*.ts"],
+    "include": [
+        "src/**/*.ts"
+  ]
+    
+}
+
