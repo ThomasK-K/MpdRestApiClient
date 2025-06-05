@@ -1,9 +1,10 @@
 import mpd, { MPD } from "mpd2";
+import dotenv from 'dotenv';
 import * as path from "path";
 // import loadImageandAlbum from "../utils/getAlbumart";
 import { loadfile as loadImageandAlbum, parseM3UFile } from "../utils";
-
 import { WS } from "./ws";
+dotenv.config();
 
 var debug = require("debug")("mpdclient");
 
@@ -72,8 +73,8 @@ const MpcStatus = Object.freeze({
 });
 const config = {
   host: process.env.HOST || "localhost",
+  playlistPath: process.env.PLAYLISTPATH || "/home/tkk/config/mpd/playlists",
   mpdPort: parseInt(process.env.MPDPORTHOST || "6600"),
-  playlistPath: process.env.PLAYLISTPATH || "",
   coverArchive: process.env.COVERARCHIVE || "https://coverartarchive.org/release-group"
 };
 
@@ -186,6 +187,7 @@ export class MpdConnection {
   }
   static async playstation(playlistName, stationName): Promise<m3ustation[]> {
     try {
+
       const filePath = path.join(
         `${config.playlistPath}`,
         `${playlistName}.m3u`
@@ -227,6 +229,7 @@ export class MpdConnection {
     const res = await MpdConnection.mpdClient.sendCommands([
       mpd.cmd("listplaylist", [playlist]),
     ]);
+    debug("#### listPlaylist ####", process.env);
     const filePath = path.join(
       `${config.playlistPath}`,
       `${playlist}.m3u`
