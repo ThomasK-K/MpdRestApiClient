@@ -1,7 +1,6 @@
 import { Application } from "./application";
 import express from 'express';
 import dotenv from 'dotenv';
-import configData from "./config.json";
 import { ServerConfigInterface } from "./interfaces/serverConfigInterfaces";
 
 dotenv.config();
@@ -25,10 +24,10 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 });
 
 ///////////////////////////////////////////////
-const serverConfig = {
-  host: process.env.HOST,
-  socketport: parseInt(process.env.SOCKERPORT),
-  port: parseInt(process.env.PORT)
+const serverConfig: ServerConfigInterface = {
+  host: process.env.HOST || 'localhost',
+  socketport: parseInt(process.env.SOCKETPORT || '3000'),
+  port: parseInt(process.env.PORT || '3001')
 };
 
 const application: Application = new Application();
@@ -38,4 +37,7 @@ const server = async () => {
   application.start();
 };
 
-server();
+server().catch(error => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+});

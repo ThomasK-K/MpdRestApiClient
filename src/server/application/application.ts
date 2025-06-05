@@ -32,11 +32,16 @@ export class Application {
     this._wss = new WS();
     this._wss.init(ws);
   }
-  initMpdConnection = async () => {
+initMpdConnection = async () => {
+  try {
     await MpdConnection.connect();
     const song = await MpdConnection.getCurrentSong();
-  };
-
+    // Do something with the song if needed
+  } catch (error) {
+    console.error('Failed to initialize MPD connection:', error);
+    // Handle the error appropriately
+  }
+};
   init(sc: ServerConfigInterface) {
     this._app.set("host", sc.host || "localhost");
     this._app.set("port", sc.port || 3000);
@@ -54,7 +59,7 @@ export class Application {
     this._app.use(bodyParser.urlencoded({ extended: true }));
     this._app.use(express.json());
 
-    const whitelist = configData.whitelist;
+    const whitelist: string[] = configData.whitelist;
 
     // Add a list of allowed origins.
     // If you have more origins you would like to add, you can add them to the array below.
@@ -62,22 +67,21 @@ export class Application {
 
     this._app.use(
       cors({
-        
         origin: (origin, callback) => {
-            console.log("CORS enabled",origin)
-        if (whitelist.indexOf(origin as string) !== -1 || !origin) {
-              callback(null, true);
-            } else {
-              callback(new ErrorHandler(403, "Not allowed by CORS"));
-            }
-          },
+          console.debug("CORS enabled", origin);
+          if (whitelist.indexOf(origin as string) !== -1 || !origin) {
+            callback(null, true);
+          } else {
+            callback(new ErrorHandler(403, "Not allowed by CORS"));
+          }
+        },
         optionsSuccessStatus: 200,
         credentials: true,
       })
     );
     // Log the routes
     this._app.use((req: Request, res: Response, next: NextFunction) => {
-      console.log(`${new Date().toString()} => ${req.originalUrl}`);
+      debug(`${new Date().toString()} => ${req.originalUrl}`);
       next();
     });
     // Load the  routes
@@ -92,7 +96,7 @@ export class Application {
         return debug(`Server running @ 'http://${host}:${port}'`);
       })
       .on("error", (error) => {
-        return console.log("Error: ", error.message);
+        return console.debug("Error: ", error.message);
       });
   }
 }

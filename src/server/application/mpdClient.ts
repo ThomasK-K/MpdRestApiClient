@@ -70,6 +70,12 @@ const MpcStatus = Object.freeze({
   reconnecting: 3,
   ready: 4,
 });
+const config = {
+  host: process.env.HOST || "localhost",
+  mpdPort: parseInt(process.env.MPDPORTHOST || "6600"),
+  playlistPath: process.env.PLAYLISTPATH || "",
+  coverArchive: process.env.COVERARCHIVE || "https://coverartarchive.org/release-group"
+};
 
 export class MpdConnection {
   // Statische Eigenschaft, um die einzige Instanz der Klasse zu speichern
@@ -111,11 +117,12 @@ export class MpdConnection {
       let dispsong = getTitleandArtist(song);
 
       // Only load album info if the song has changed
-      if (!MpdConnection.previousSong || 
-          MpdConnection.previousSong.artist !== dispsong.artist || 
-          MpdConnection.previousSong.title !== dispsong.title) {
+      if (
+        !MpdConnection.previousSong ||
+        MpdConnection.previousSong.artist !== dispsong.artist ||
+        MpdConnection.previousSong.title !== dispsong.title
+      ) {
         try {
-        
           const data = await loadImageandAlbum(dispsong.artist, dispsong.title);
           if (data) {
             if (data.images && data.images.length > 0) {
@@ -136,21 +143,22 @@ export class MpdConnection {
         }
       } else {
         // Use cached album info from previous song
-        dispsong = { 
-          ...dispsong, 
+        dispsong = {
+          ...dispsong,
           album: MpdConnection.previousSong.album,
           albumname: MpdConnection.previousSong.albumname,
-          wiki: MpdConnection.previousSong.wiki
+          wiki: MpdConnection.previousSong.wiki,
         };
       }
 
       debug("####  album   ###", dispsong.album);
       return dispsong;
-    } catch (error) {
-      debug("Error getting current song:", error);
-      throw new Error(
-        error instanceof Error ? error.message : "Failed to get current song"
-      );
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        debug("Error getting current song:", error.message);
+        throw error;
+      }
+      throw new Error("Failed to get current song");
     }
   }
   static async listall(): Promise<Song[]> {
@@ -179,14 +187,16 @@ export class MpdConnection {
   static async playstation(playlistName, stationName): Promise<m3ustation[]> {
     try {
       const filePath = path.join(
-        `${process.env.PLAYLISTPATH}`,
+        `${config.playlistPath}`,
         `${playlistName}.m3u`
       );
       const playlist = await parseM3UFile(filePath);
       // get url from playlist
       const url = playlist.find((item) => item.name === stationName)?.url;
       if (!url) {
-        throw new Error(`Station ${stationName} not found in playlist ${playlistName}`);
+        throw new Error(
+          `Station ${stationName} not found in playlist ${playlistName}`
+        );
       }
       // Clear current playlist and add the selected station
       await MpdConnection.mpdClient.sendCommands([
@@ -198,8 +208,12 @@ export class MpdConnection {
       debug("###    ####", filePath, playlist, stationName);
 
       return playlist;
-    } catch (error) {
-      console.log("Error", error);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        debug("Error getting plastation:", error.message);
+        throw error;
+      }
+      throw new Error("Failed to get current song");
     }
   }
   static async getAllPlaylists(): Promise<playlist[]> {
@@ -209,18 +223,32 @@ export class MpdConnection {
     return playlists;
   }
   static async listPlaylist(playlist: string): Promise<m3ustation[]> {
+  try {
     const res = await MpdConnection.mpdClient.sendCommands([
       mpd.cmd("listplaylist", [playlist]),
     ]);
     const filePath = path.join(
-      `${process.env.PLAYLISTPATH}`,
+      `${config.playlistPath}`,
       `${playlist}.m3u`
     );
     const res1 = await parseM3UFile(filePath);
     debug("###    ####", filePath, res1);
 
     return res1;
+  } catch (error) {
+    debug("Error listing playlist:", error);
+    throw new Error(`Failed to list playlist ${playlist}: ${error.message}`);
   }
+}
+  /**
+   * Retrieves the current playlist from the MPD server.
+   * 
+   * This method sends a 'playlist' command to the MPD server and returns the raw response.
+   * The response typically contains a list of songs in the current playlist.
+   * 
+   * @returns A Promise that resolves to a string containing the raw playlist data from the MPD server.
+   * @throws Will throw an error if the MPD command fails or if there's a connection issue.
+   */
   static async playlist(): Promise<string> {
     // await MpdConnection.mpdClient.sendCommand("load swr");
     const res = await MpdConnection.mpdClient.sendCommand("playlist");
@@ -288,8 +316,8 @@ export class MpdConnection {
     try {
       MpdConnection.connection = new MpdConnection();
       const mpdconfig = {
-        host: process.env.HOST || "localhost",
-        port: parseInt(process.env.MPDPORTHOST) || 6600,
+        host: config.host,
+        port: config.mpdPort,
       };
       const mpc = await mpd.connect(mpdconfig);
       MpdConnection.mpdClient = mpc;
@@ -359,7 +387,7 @@ const getTitleandArtist = (song: Song): DispSong => {
 export async function getImage({ id }) {
   const response = await fetch(
     `${
-      process.env.COVERARCHIVE || "https://coverartarchive.org/release-group"
+      config.coverArchive
     }/${id}`
   );
   // No image found for this release, try next
