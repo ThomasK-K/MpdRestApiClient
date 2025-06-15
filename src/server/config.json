@@ -1,7 +1,8 @@
-{
-    "whitelist": [
+ {   "whitelist": [
       "http://192.168.10.113:8080",
-      "http://localhost:19006"
+      "http://192.168.10.152:8080",
+      "http://localhost:19006",
+      "http://localhost:8080"
     ],
-    "whitelistIPRanges" : ["192.168.10.0/24","127.0.0.1"]
+    "whitelistIPRanges" : ["::1","192.168.10.0/24","127.0.0.1"]
   }

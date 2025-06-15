@@ -305,6 +305,7 @@ export class MpdConnection {
       );
     }
   };
+  
 
   static setVol = async (vol: string): Promise<void> => {
     try {
