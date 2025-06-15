@@ -10,6 +10,8 @@ import { WebSocketServer } from "ws";
 import { WS } from ".";
 import { MpdConnection } from "./mpdClient";
 
+var ipRangeCheck = require("ip-range-check");
+
 var debug = require("debug")("application");
 
 export class Application {
@@ -24,24 +26,30 @@ export class Application {
     const server = createServer(this._app);
     this._server = server;
     // Initialisiere den WebSocket-Server
-    // this._wss = new WebSocketServer({ server });
-    // const ws = new WS();
-    // ws.init(this._wss);
-
     const ws = new WebSocketServer({ server });
     this._wss = new WS();
     this._wss.init(ws);
   }
-initMpdConnection = async () => {
-  try {
-    await MpdConnection.connect();
-    const song = await MpdConnection.getCurrentSong();
-    // Do something with the song if needed
-  } catch (error) {
-    console.error('Failed to initialize MPD connection:', error);
-    // Handle the error appropriately
+  initMpdConnection = async () => {
+    try {
+      await MpdConnection.connect();
+      const song = await MpdConnection.getCurrentSong();
+      // Do something with the song if needed
+    } catch (error) {
+      console.error("Failed to initialize MPD connection:", error);
+      // Handle the error appropriately
+    }
+  };
+  // Middleware zur Prüfung der IP gegen die Whitelist
+  private ipWhitelist(req, res, next) {
+    const clientIP = req.ip || req.connection.remoteAddress;
+    debug("Client IP:", clientIP);
+    if (ipRangeCheck(clientIP, configData.whitelistIPRanges)) {
+      next();
+    } else {
+      res.status(403).send("Access denied: Your IP is not whitelisted.");
+    }
   }
-};
   init(sc: ServerConfigInterface) {
     this._app.set("host", sc.host || "localhost");
     this._app.set("port", sc.port || 3000);
@@ -60,25 +68,27 @@ initMpdConnection = async () => {
     this._app.use(express.json());
 
     const whitelist: string[] = configData.whitelist;
+    // CORS-Optionen mit Whitelist
+    const corsOptions = {
+      origin: (origin, callback) => {
+        debug("CORS host = ", origin);
+        if (whitelist.indexOf(origin as string) !== -1 || !origin) {
+          callback(null, true);
+        } else {
+          callback(new ErrorHandler(403, "Not allowed by CORS"));
+        }
+      },
+      optionsSuccessStatus: 200,
+      credentials: true,
+    };
 
     // Add a list of allowed origins.
     // If you have more origins you would like to add, you can add them to the array below.
     // const allowedOrigins = ["http://localhost:3000, http://localhost:8000"];
+    this._app.set("trust proxy", true); // wichtig, falls hinter Proxy
+    this._app.use(this.ipWhitelist.bind(this)); // Middleware zur IP-Whitelist
+    this._app.use(cors(corsOptions));
 
-    this._app.use(
-      cors({
-        origin: (origin, callback) => {
-          console.debug("CORS enabled", origin);
-          if (whitelist.indexOf(origin as string) !== -1 || !origin) {
-            callback(null, true);
-          } else {
-            callback(new ErrorHandler(403, "Not allowed by CORS"));
-          }
-        },
-        optionsSuccessStatus: 200,
-        credentials: true,
-      })
-    );
     // Log the routes
     this._app.use((req: Request, res: Response, next: NextFunction) => {
       debug(`${new Date().toString()} => ${req.originalUrl}`);

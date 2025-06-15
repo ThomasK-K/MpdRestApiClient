@@ -75,6 +75,7 @@ const config = {
   host: process.env.HOST || "localhost",
   playlistPath: process.env.PLAYLISTPATH || "/home/tkk/config/mpd/playlists",
   mpdPort: parseInt(process.env.MPDPORTHOST || "6600"),
+   mpdHost: process.env.MPDHOST || "localhost",
   coverArchive: process.env.COVERARCHIVE || "https://coverartarchive.org/release-group"
 };
 
@@ -319,7 +320,7 @@ export class MpdConnection {
     try {
       MpdConnection.connection = new MpdConnection();
       const mpdconfig = {
-        host: config.host,
+        host: config.mpdHost,
         port: config.mpdPort,
       };
       const mpc = await mpd.connect(mpdconfig);
