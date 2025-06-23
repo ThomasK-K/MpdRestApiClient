@@ -26,7 +26,15 @@ LASTFM_APIKEY=        # Your Last.fm API key
 PLAYLISTPATH=         # Path to MPD playlists
 MUSICPATH=            # Path to music library
 AUDIOSCROBBLER=http://ws.audioscrobbler.com/2.0
+
+# HTTPS Configuration (optional)
+HTTPS_ENABLED=false      # Set to true to enable HTTPS
+HTTPS_PORT=8443          # HTTPS server port
+SSL_KEY_PATH=            # Path to SSL private key file
+SSL_CERT_PATH=           # Path to SSL certificate file
 ```
+
+For detailed instructions on HTTPS setup, see [ssl_setup.md](ssl_setup.md).
 
 ## Installation
 

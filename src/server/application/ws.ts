@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { MpdConnection } from "./mpdClient";
 var debug = require("debug")("wss");
-import { WebSocketServer } from "ws";
+import { WebSocketServer, Server as WSServer } from "ws";
 import { send } from "process";
 
 interface WSMessage {
@@ -28,11 +28,74 @@ var stationFile =
 
 export class WS {
   static _wss: WebSocketServer;
+  static _wssSecure: WebSocketServer | null = null;
+
   constructor() {
     // super(null);
   }
   getWs() {
     return WS._wss;
+  }
+
+  getSecureWs() {
+    return WS._wssSecure;
+  }
+
+  init(ws: WSServer) {
+    WS._wss = ws;
+    this.setupWSListeners(WS._wss);
+  }
+
+  initSecure(ws: WSServer) {
+    WS._wssSecure = ws;
+    this.setupWSListeners(WS._wssSecure);
+  }
+
+  setupWSListeners(ws: WSServer) {
+    ws.on("connection", (wsClient) => {
+      debug("Client connected");
+
+      wsClient.on("message", async (message: string) => {
+        try {
+          var msg: WSMessage = JSON.parse(message);
+
+          switch (msg.type) {
+            case "REQUEST_STATION_LIST":
+              debug("Received %s with %o", msg.type, msg.data);
+              var stationList = await readInput(stationFile);
+              this.sendWSSMessage(wsClient, "STATION_LIST", stationList);
+              break;
+            case "REQUEST_CURRENTSONG":
+              try {
+                const status = await MpdConnection.getCurrentSong();
+                this.sendWSSMessage(wsClient, "CURRENTSONG", status);
+              } catch (error) {
+                this.sendWSSMessage(wsClient, "MPD_OFFLINE", "");
+              }
+              break;
+            // ... other cases ...
+            default:
+              debug(
+                "Received unknown message type: %s with %o",
+                msg.type,
+                msg.data
+              );
+              break;
+          }
+        } catch (error) {
+          debug("Error parsing message: %o", error);
+          this.sendWSSMessage(wsClient, "ERROR", "Invalid message format");
+        }
+      });
+
+      wsClient.on("close", () => {
+        console.log("Client disconnected");
+      });
+
+      wsClient.on("error", (error) => {
+        console.error("WebSocket error:", error);
+      });
+    });
   }
 
   static objectToLowerCase(data: any) {
@@ -78,49 +141,4 @@ export class WS {
     });
   }
   //////////////////////////////////////////
-  async init(wss: WebSocketServer) {
-    WS._wss = wss;
-    wss.on("connection", async (ws) => {
-      ws.on("message", async (message: string) => {
-        try {
-          var msg: WSMessage = JSON.parse(message);
-
-          switch (msg.type) {
-            case "REQUEST_STATION_LIST":
-              debug("Received %s with %o", msg.type, msg.data);
-              var stationList = await readInput(stationFile);
-              this.sendWSSMessage(ws, "STATION_LIST", stationList);
-              break;
-            case "REQUEST_CURRENTSONG":
-              try {
-                const status = await MpdConnection.getCurrentSong();
-                this.sendWSSMessage(ws, "CURRENTSONG", status);
-              } catch (error) {
-                this.sendWSSMessage(ws, "MPD_OFFLINE", "");
-              }
-              break;
-            // ... other cases ...
-            default:
-              debug(
-                "Received unknown message type: %s with %o",
-                msg.type,
-                msg.data
-              );
-              break;
-          }
-        } catch (error) {
-          debug("Error parsing message: %o", error);
-          this.sendWSSMessage(ws, "ERROR", "Invalid message format");
-        }
-      });
-
-      ws.on("close", () => {
-        console.log("Client disconnected");
-      });
-
-      ws.on("error", (error) => {
-        console.error("WebSocket error:", error);
-      });
-    });
-  }
 }
