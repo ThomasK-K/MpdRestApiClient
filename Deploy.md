@@ -55,6 +55,13 @@ Kompiliere die TypeScript-Dateien:
 
 ```bash
 npm run build
+# Oder für eine saubere Neuinstallation
+npm run rebuild
+```
+
+Prüfe, ob die Dateien korrekt erstellt wurden:
+```bash
+ls -la dist/server/
 ```
 
 ## 5. SSL-Zertifikate vorbereiten
@@ -228,3 +235,21 @@ Falls Probleme auftreten, überprüfe die folgenden Punkte:
 - **HTTPS-Fehler:** Überprüfe die SSL-Zertifikate und Berechtigungen
 - **Verbindungsfehler zu MPD:** Stelle sicher, dass der MPD-Server läuft und erreichbar ist
 - **WebSocket-Fehler:** Überprüfe die Nginx-Konfiguration für WebSockets
+
+### Diagnose-Befehle
+
+```bash
+# HTTP-Verbindung testen
+curl -v http://localhost:3000/player/currentsong
+
+# HTTPS-Verbindung mit selbstsignierten Zertifikaten testen
+curl -v -k https://localhost:3443/player/currentsong
+
+# CORS-Anfrage simulieren
+curl -v -k -H "Origin: https://deine-client-domain.de" https://localhost:3443/player/currentsong
+
+# MPD-Verbindung prüfen
+telnet localhost 6600
+```
+
+Weitere Informationen zur Browser-Client-Entwicklung und zum Umgang mit CORS-Problemen findest du in der Datei [browser-client-hints.md](browser-client-hints.md).
