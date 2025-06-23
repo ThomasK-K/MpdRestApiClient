@@ -9,16 +9,19 @@ import { playerroutes } from "../routes";
 import { WebSocketServer } from "ws";
 import { WS } from ".";
 import { MpdConnection } from "./mpdClient";
+import * as https from "https";
+import * as fs from "fs";
 
 var ipRangeCheck = require("ip-range-check");
-
 
 var debug = require("debug")("application");
 
 export class Application {
   public _app: Express;
   public _server: Server;
+  public _httpsServer: https.Server | null = null;
   public _wss: WS;
+  private _serverConfig: ServerConfigInterface | null = null;
 
   constructor() {
     // Initialisiere das Express-App
@@ -52,23 +55,16 @@ export class Application {
     }
   }
   init(sc: ServerConfigInterface) {
+    const whitelist: string[] = configData.whitelist;
+    this._serverConfig = sc;
     this._app.set("host", sc.host || "localhost");
     this._app.set("port", sc.port || 3000);
-    this._app.use((req, res, next) => {
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "accept, authorization,content-type,x-requested-with"
-      );
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-      res.setHeader("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE");
-      // res.setHeader("Access-Control-Allow-Origin", req.header("origin")!);
-      next();
-    });
+    
+    // Body Parser konfigurieren
     this._app.use(bodyParser.json());
     this._app.use(bodyParser.urlencoded({ extended: true }));
     this._app.use(express.json());
 
-    const whitelist: string[] = configData.whitelist;
     // CORS-Optionen mit Whitelist
     const corsOptions = {
       origin: (origin, callback) => {
@@ -76,12 +72,34 @@ export class Application {
         if (whitelist.indexOf(origin as string) !== -1 || !origin) {
           callback(null, true);
         } else {
+          debug("Origin not allowed by CORS:", origin);
           callback(new ErrorHandler(403, "Not allowed by CORS"));
         }
       },
-      optionsSuccessStatus: 200,
-      credentials: true,
+      methods: ["GET", "PUT", "POST", "DELETE", "OPTIONS"],
+      allowedHeaders: [
+        "accept",
+        "authorization",
+        "content-type",
+        "x-requested-with",
+      ],
+      exposedHeaders: [
+        "Content-Length",
+        "Content-Type"
+      ],
+      maxAge: 86400,               // 24 Stunden (in Sekunden)
+      optionsSuccessStatus: 200,   // Status-Code für OPTIONS-Requests
+      credentials: true,           // Erlaubt Cookies in CORS-Requests
+      preflightContinue: false,
     };
+    
+    // Füge Middleware für Cache-Control hinzu
+    this._app.use((req, res, next) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      next();
+    });
 
     // Add a list of allowed origins.
     // If you have more origins you would like to add, you can add them to the array below.
@@ -98,16 +116,53 @@ export class Application {
     // Load the  routes
 
     this._app.use("/player", playerroutes);
+
+    // Create HTTPS server if enabled
+    if (sc.https_enabled && sc.ssl_key_path && sc.ssl_cert_path) {
+      try {
+        const options = {
+          key: fs.readFileSync(sc.ssl_key_path),
+          cert: fs.readFileSync(sc.ssl_cert_path),
+        };
+        this._httpsServer = https.createServer(options, this._app);
+      } catch (error) {
+        console.error("Failed to create HTTPS server:", error);
+        throw error;
+      }
+    }
   }
   public start(): void {
     const host: string = this._app.get("host");
     const port: number = this._app.get("port");
+
+    // Start HTTP server
     this._server
       .listen(port, host, () => {
-        return debug(`Server running @ 'http://${host}:${port}'`);
+        return debug(`HTTP Server running @ 'http://${host}:${port}'`);
       })
       .on("error", (error) => {
-        return console.debug("Error: ", error.message);
+        return console.debug("HTTP Error: ", error.message);
       });
+
+    // Start HTTPS server if enabled
+    if (
+      this._httpsServer &&
+      this._serverConfig?.https_enabled &&
+      this._serverConfig?.https_port
+    ) {
+      const httpsPort = this._serverConfig.https_port;
+
+      // Initialize WSS for HTTPS
+      const wsSecure = new WebSocketServer({ server: this._httpsServer });
+      this._wss.initSecure(wsSecure);
+
+      this._httpsServer
+        .listen(httpsPort, host, () => {
+          return debug(`HTTPS Server running @ 'https://${host}:${httpsPort}'`);
+        })
+        .on("error", (error) => {
+          return console.debug("HTTPS Error: ", error.message);
+        });
+    }
   }
 }

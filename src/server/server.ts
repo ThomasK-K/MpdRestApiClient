@@ -27,7 +27,11 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 const serverConfig: ServerConfigInterface = {
   host: process.env.HOST || 'localhost',
   socketport: parseInt(process.env.SOCKETPORT || '3000'),
-  port: parseInt(process.env.PORT || '3001')
+  port: parseInt(process.env.PORT || '3001'),
+  https_enabled: process.env.HTTPS_ENABLED === 'true',
+  https_port: parseInt(process.env.HTTPS_PORT || '8443'),
+  ssl_key_path: process.env.SSL_KEY_PATH || '',
+  ssl_cert_path: process.env.SSL_CERT_PATH || ''
 };
 
 const application: Application = new Application();
