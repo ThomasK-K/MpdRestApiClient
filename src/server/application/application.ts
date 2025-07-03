@@ -65,34 +65,6 @@ export class Application {
     this._app.use(bodyParser.urlencoded({ extended: true }));
     this._app.use(express.json());
 
-    // CORS-Optionen mit Whitelist
-    const corsOptions = {
-      origin: (origin, callback) => {
-        debug("CORS host = ", origin);
-        if (whitelist.indexOf(origin as string) !== -1 || !origin) {
-          callback(null, true);
-        } else {
-          debug("Origin not allowed by CORS:", origin);
-          callback(new ErrorHandler(403, "Not allowed by CORS"));
-        }
-      },
-      methods: ["GET", "PUT", "POST", "DELETE", "OPTIONS"],
-      allowedHeaders: [
-        "accept",
-        "authorization",
-        "content-type",
-        "x-requested-with",
-      ],
-      exposedHeaders: [
-        "Content-Length",
-        "Content-Type"
-      ],
-      maxAge: 86400,               // 24 Stunden (in Sekunden)
-      optionsSuccessStatus: 200,   // Status-Code für OPTIONS-Requests
-      credentials: true,           // Erlaubt Cookies in CORS-Requests
-      preflightContinue: false,
-    };
-    
     // Füge Middleware für Cache-Control hinzu
     this._app.use((req, res, next) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -105,8 +77,8 @@ export class Application {
     // If you have more origins you would like to add, you can add them to the array below.
     // const allowedOrigins = ["http://localhost:3000, http://localhost:8000"];
     this._app.set("trust proxy", true); // wichtig, falls hinter Proxy
-    this._app.use(this.ipWhitelist.bind(this)); // Middleware zur IP-Whitelist
-    this._app.use(cors(corsOptions));
+    // this._app.use(this.ipWhitelist.bind(this)); // Middleware zur IP-Whitelist
+    // this._app.use(cors(corsOptions));
 
     // Log the routes
     this._app.use((req: Request, res: Response, next: NextFunction) => {
