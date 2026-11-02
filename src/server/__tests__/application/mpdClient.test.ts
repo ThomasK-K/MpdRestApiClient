@@ -1,95 +1,99 @@
-// Mock MPD client setup
-const mockSendCommand = jest.fn();
 const mockOn = jest.fn();
+const mockOff = jest.fn();
 const mockConnect = jest.fn();
-const mockParseObject = jest.fn();
-
-const mockMpdClient = {
-  sendCommand: mockSendCommand,
+const mockClient = {
   on: mockOn,
+  off: mockOff,
   connect: mockConnect,
+  playback: {
+    getState: jest.fn(),
+    getCurrentTrack: jest.fn(),
+    getCurrentTlTrack: jest.fn(),
+    getStreamTitle: jest.fn(),
+    getTimePosition: jest.fn(),
+  },
+  mixer: {
+    getVolume: jest.fn(),
+  },
+  tracklist: {
+    getRepeat: jest.fn(),
+    getRandom: jest.fn(),
+    getSingle: jest.fn(),
+    getConsume: jest.fn(),
+    getLength: jest.fn(),
+    getTlTracks: jest.fn(),
+    getNextTlid: jest.fn(),
+    getVersion: jest.fn(),
+    index: jest.fn(),
+  },
+  library: {},
+  playlists: {},
 };
 
-jest.mock('mpd2', () => {
-  return {
-    __esModule: true,
-    default: {
-      Client: jest.fn().mockImplementation(() => mockMpdClient),
-      connect: jest.fn().mockResolvedValue(mockMpdClient),
-      parseObject: mockParseObject,
-    },
-  };
-});
+jest.mock("mopidy", () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => mockClient),
+}));
 
-// Import after mocks are set up
-import { MpdConnection } from '../../application/mpdClient';
+import { MpdConnection } from "../../application/mpdClient";
 
-describe('MpdConnection', () => {
+describe("MpdConnection", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Reset singleton instance and mock functions
-    (MpdConnection as any).instance = null;
-    (MpdConnection as any).mpdClient = mockMpdClient;
+    (MpdConnection as any).connection = null;
+    (MpdConnection as any).mopidyClient = mockClient;
+    mockClient.playback.getState.mockResolvedValue("playing");
+    mockClient.playback.getCurrentTrack.mockResolvedValue(null);
+    mockClient.playback.getCurrentTlTrack.mockResolvedValue(null);
+    mockClient.playback.getStreamTitle.mockResolvedValue(null);
+    mockClient.playback.getTimePosition.mockResolvedValue(null);
+    mockClient.mixer.getVolume.mockResolvedValue(80);
+    mockClient.tracklist.getRepeat.mockResolvedValue(false);
+    mockClient.tracklist.getRandom.mockResolvedValue(false);
+    mockClient.tracklist.getSingle.mockResolvedValue(false);
+    mockClient.tracklist.getConsume.mockResolvedValue(false);
+    mockClient.tracklist.getLength.mockResolvedValue(0);
+    mockClient.tracklist.getTlTracks.mockResolvedValue([]);
+    mockClient.tracklist.getNextTlid.mockResolvedValue(null);
+    mockClient.tracklist.getVersion.mockResolvedValue(1);
+    mockClient.tracklist.index.mockResolvedValue(null);
   });
 
-  describe('getConnection', () => {
-    it('should create and return a singleton instance', () => {
-      const instance1 = MpdConnection.getConnection();
-      const instance2 = MpdConnection.getConnection();
-      expect(instance1).toBe(instance2);
-    });
+  it("returns a singleton instance", () => {
+    expect(MpdConnection.getConnection()).toBe(MpdConnection.getConnection());
   });
 
-  describe('connect', () => {
-    it('should initialize the MPD client and attach event listeners', async () => {
-      // Get the mpd2 mock after jest.mock
-      const mpd2 = require('mpd2').default;
-      await MpdConnection.connect();
-      expect(mpd2.connect).toHaveBeenCalled();
-      expect(mockOn).toHaveBeenCalledWith('system', expect.any(Function));
-      // Note: Only 'system' is attached in connect(), not 'ready'.
+  it("connects to Mopidy and subscribes to relevant events", async () => {
+    mockConnect.mockImplementation(() => {
+      const onlineListener = mockOn.mock.calls.find(([event]) => event === "state:online")[1];
+      onlineListener();
     });
+
+    await MpdConnection.connect();
+
+    expect(mockOn).toHaveBeenCalledWith("event:tracklistChanged", expect.any(Function));
+    expect(mockOn).toHaveBeenCalledWith("event:playbackStateChanged", expect.any(Function));
+    expect(mockClient.connect).toHaveBeenCalled();
   });
 
-  describe('getPlayerStatus', () => {
-    beforeEach(() => {
-      MpdConnection.getConnection();
-    });
+  it("maps Mopidy state and settings to the existing status shape", async () => {
+    const status = await MpdConnection.getStatus();
 
-    it('should return the player state', async () => {
-      mockSendCommand.mockResolvedValueOnce('raw status');
-      mockParseObject.mockReturnValueOnce({ state: 'play' });
-
-      const status = await MpdConnection.getPlayerStatus();
-      expect(status).toBe('play');
-      expect(mockSendCommand).toHaveBeenCalledWith('status');
-    });
-
-    it('should handle errors', async () => {
-      mockSendCommand.mockRejectedValueOnce(new Error('MPD error'));
-      await expect(MpdConnection.getPlayerStatus()).rejects.toThrow('MPD error');
-    });
+    expect(status).toEqual(expect.objectContaining({
+      state: "play",
+      volume: 80,
+      repeat: false,
+      random: false,
+      single: false,
+      consume: false,
+      playlistlength: 0,
+    }));
   });
 
-  describe('getStatus', () => {
-    beforeEach(() => {
-      MpdConnection.getConnection();
-    });
-
-    it('should return parsed MPD status', async () => {
-      const mockStatus = {
-        volume: 100,
-        repeat: false,
-        random: false,
-        state: 'play'
-      };
-
-      mockSendCommand.mockResolvedValueOnce('raw status');
-      mockParseObject.mockReturnValueOnce(mockStatus);
-
-      const status = await MpdConnection.getStatus();
-      expect(status).toEqual(mockStatus);
-      expect(mockSendCommand).toHaveBeenCalledWith('status');
+  it("returns an empty song when the Mopidy queue has no current track", async () => {
+    await expect(MpdConnection.getCurrentSong()).resolves.toEqual({
+      artist: "",
+      title: "",
     });
   });
 });

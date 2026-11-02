@@ -13,7 +13,7 @@
     },"exclude": ["trash/**/*.ts"],
     "include": [
         "src/**/*.ts"
-  ]
+,         "src/server/application/mpdClient.ts.old"  ]
     
 }
 
