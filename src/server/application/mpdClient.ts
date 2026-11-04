@@ -61,7 +61,9 @@ type playlist = {
 };
 
 type ConnectedMopidy = Mopidy &
-  Required<Pick<Mopidy, "playback" | "tracklist" | "library" | "playlists" | "mixer">>;
+  Required<
+    Pick<Mopidy, "playback" | "tracklist" | "library" | "playlists" | "mixer">
+  >;
 
 const MpcStatus = Object.freeze({
   disconnected: 1,
@@ -74,7 +76,8 @@ const config = {
   playlistPath: process.env.PLAYLISTPATH || "/home/tkk/config/mpd/playlists",
   mopidyPort: parseInt(process.env.MOPIDYPORT || "6680", 10),
   mopidyHost: process.env.MOPIDYHOST || process.env.MPDHOST || "localhost",
-  coverArchive: process.env.COVERARCHIVE || "https://coverartarchive.org/release-group",
+  coverArchive:
+    process.env.COVERARCHIVE || "https://coverartarchive.org/release-group",
 };
 
 export class MpdConnection {
@@ -151,15 +154,20 @@ export class MpdConnection {
       single,
       consume,
       playlist: playlistVersion,
-      state: state === "playing" ? "play" : state === "paused" ? "pause" : "stop",
+      state:
+        state === "playing" ? "play" : state === "paused" ? "pause" : "stop",
       playlistlength,
       song: song ?? -1,
       songid: currentTlTrack?.tlid ?? -1,
       bitrate: Number(currentTrack?.bitrate) || 0,
       elapsed: timePosition == null ? undefined : timePosition / 1000,
-      duration: currentTrack?.length == null ? undefined : currentTrack.length / 1000,
+      duration:
+        currentTrack?.length == null ? undefined : currentTrack.length / 1000,
       nextsongid: nextTlid ?? undefined,
-      nextsong: nextTlid == null ? undefined : tracks.findIndex((track) => track.tlid === nextTlid),
+      nextsong:
+        nextTlid == null
+          ? undefined
+          : tracks.findIndex((track) => track.tlid === nextTlid),
     };
   }
 
@@ -176,13 +184,31 @@ export class MpdConnection {
         return { artist: "", title: "" };
       }
 
+      let artist = "";
+      let title = "";
+      if (!track.artists || track.artists.length === 0) {
+        ({ title, artist } = await getTitleandArtist({
+          file: track.uri,
+          title: streamTitle || track.name || "",
+          name: track.name,
+          Id: 0,
+          artist: "",
+          album: track.album?.name,
+          time: timePosition == null ? undefined : String(timePosition / 1000),
+          duration:
+            track.length == null ? undefined : String(track.length / 1000),
+        }));
+      }
+
       const dispsong: DispSong = {
-        artist: track.artists?.map((item) => item.name).join(", ") || "",
-        title: streamTitle || track.name || "",
+        artist:
+          artist || track.artists?.map((item) => item.name).join(", ") || "",
+        title: title || streamTitle || track.name || "",
         file: track.uri,
         albumname: track.album?.name,
         time: timePosition == null ? undefined : String(timePosition / 1000),
-        duration: track.length == null ? undefined : String(track.length / 1000),
+        duration:
+          track.length == null ? undefined : String(track.length / 1000),
       };
       if (track.uri?.startsWith("http")) {
         dispsong.station = track.name;
@@ -239,8 +265,9 @@ export class MpdConnection {
         artist: track.artists?.map((artist) => artist.name).join(", "),
         album: track.album?.name,
         time: track.length == null ? undefined : String(track.length / 1000),
-        duration: track.length == null ? undefined : String(track.length / 1000),
-      }))
+        duration:
+          track.length == null ? undefined : String(track.length / 1000),
+      })),
     );
   }
 
@@ -259,13 +286,18 @@ export class MpdConnection {
     await MpdConnection.playUri(decodeURI(song));
   }
 
-  static async playstation(playlistName: string, stationName: string): Promise<m3ustation[]> {
+  static async playstation(
+    playlistName: string,
+    stationName: string,
+  ): Promise<m3ustation[]> {
     try {
       const filePath = path.join(config.playlistPath, `${playlistName}.m3u`);
       const playlist = await parseM3UFile(filePath);
       const url = playlist.find((item) => item.name === stationName)?.url;
       if (!url) {
-        throw new Error(`Station ${stationName} not found in playlist ${playlistName}`);
+        throw new Error(
+          `Station ${stationName} not found in playlist ${playlistName}`,
+        );
       }
       await MpdConnection.playUri(url);
       debug("###    ####", filePath, playlist, stationName);
@@ -325,7 +357,9 @@ export class MpdConnection {
       return MpdConnection.getPlayerStatus();
     } catch (error) {
       debug("Error executing command:", mode, error);
-      throw new Error(error instanceof Error ? error.message : "Command execution failed");
+      throw new Error(
+        error instanceof Error ? error.message : "Command execution failed",
+      );
     }
   };
 
@@ -348,7 +382,9 @@ export class MpdConnection {
       await MpdConnection.getClient().mixer.setVolume({ volume: Number(vol) });
     } catch (error) {
       debug("Error setting volume:", error);
-      throw new Error(error instanceof Error ? error.message : "Failed to set volume");
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to set volume",
+      );
     }
   };
 
@@ -395,7 +431,11 @@ export class MpdConnection {
   private static async broadcastCurrentSong(): Promise<void> {
     const wsServer = WS._wss;
     if (wsServer) {
-      WS.broadcastMessage(wsServer, "REQUEST_CURRENTSONG", await MpdConnection.getCurrentSong());
+      WS.broadcastMessage(
+        wsServer,
+        "REQUEST_CURRENTSONG",
+        await MpdConnection.getCurrentSong(),
+      );
     }
   }
 
@@ -404,7 +444,11 @@ export class MpdConnection {
     if (!wsServer) {
       return;
     }
-    WS.broadcastMessage(wsServer, "REQUEST_STATUS", await MpdConnection.getStatus());
+    WS.broadcastMessage(
+      wsServer,
+      "REQUEST_STATUS",
+      await MpdConnection.getStatus(),
+    );
     await MpdConnection.broadcastCurrentSong();
   }
 }
@@ -418,3 +462,31 @@ export async function getImage({ id }) {
   } = await response.json();
   return image.image;
 }
+
+const getTitleandArtist = async (song: Song): Promise<DispSong> => {
+  let zeichen = "-";
+
+  var arr: string[];
+  var dispsong: DispSong = { artist: "", title: "" };
+  const regexp = / - /g;
+  if (song && song.title) {
+    const count = (song.title.match(new RegExp(regexp, "g")) || []).length;
+    if (count) {
+      arr = song.title.split(" - ");
+    } else {
+      // if no title available
+      const count = (song.file.match(new RegExp(regexp, "g")) || []).length;
+      arr = song.file.split(" - ");
+    }
+    if (arr.length) {
+      dispsong.artist = arr[0];
+      dispsong.title = arr.at(-1) ?? "";
+      dispsong.title.indexOf(".")
+        ? (dispsong.title = dispsong.title.split(".")[0])
+        : dispsong.title;
+    }
+    if (song.file.startsWith("http")) dispsong.station = song.name;
+  }
+
+  return dispsong;
+};

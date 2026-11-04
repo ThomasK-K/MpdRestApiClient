@@ -94,7 +94,7 @@ player.get("/", async (_req: Request, res: Response) => {
     const playerStatus = convertToPlayerStatus(mpdStatus);
     sendResponse<PlayerStatus>(res, playerStatus);
   } catch (error) {
-    handleError(res, error.message);
+    handleError(res, ERROR_MESSAGES.NO_COMMAND);
   }
 });
 player.get("/currentsong", async (_req: Request, res: Response) => {
@@ -109,7 +109,7 @@ player.get("/currentsong", async (_req: Request, res: Response) => {
     };
     sendResponse<CurrentSong>(res, currentSong);
   } catch (error) {
-    handleError(res, error.message);
+    handleError(res, ERROR_MESSAGES.NO_SONG);
   }
 });
 player.get("/listplaylists", async (_req: Request, res: Response) => {
@@ -118,7 +118,7 @@ player.get("/listplaylists", async (_req: Request, res: Response) => {
     const playlists = list.map((item) => item.playlist);
     sendResponse<string[]>(res, playlists);
   } catch (error) {
-    handleError(res, error.message);
+    handleError(res, ERROR_MESSAGES.NO_PLAYLIST);
   }
 });
 
@@ -143,7 +143,7 @@ player.get(
       const playerStatus = await MpdConnection.steuerung(command as string);
       sendResponse(res, { status: playerStatus });
     } catch (error) {
-      handleError(res, error.message);
+      handleError(res, ERROR_MESSAGES.INVALID_URL);
     }
   }
 );
@@ -165,7 +165,7 @@ player.get(
       await MpdConnection.setVol(volume.toString());
       sendResponse(res, { volume });
     } catch (error) {
-      handleError(res, error.message);
+      handleError(res, ERROR_MESSAGES.INVALID_VOLUME);
     }
   }
 );
@@ -182,7 +182,7 @@ player.get(
       );
       sendResponse(res, { status: playerStatus });
     } catch (error) {
-      handleError(res, error.message);
+      handleError(res, ERROR_MESSAGES.INVALID_URL);
     }
   }
 );
@@ -193,12 +193,12 @@ player.get(
     try {
       const { name } = req.query;
       const content = await MpdConnection.listPlaylist(
-        (name as string) || null
+        (name as string)
       );
 
       sendResponse<any>(res, content);
     } catch (error) {
-      handleError(res, error.message);
+      handleError(res, ERROR_MESSAGES.NO_PLAYLIST);
     }
   }
 );
@@ -209,7 +209,7 @@ player.get("/playlist", async (_req: Request, res: Response) => {
     // const playerStatus = convertToPlayerStatus(mpdStatus);
     sendResponse(res, playlist);
   } catch (error) {
-    handleError(res, error.message);
+    handleError(res, ERROR_MESSAGES.NO_PLAYLIST);
   }
 });
 
@@ -226,7 +226,7 @@ player.get("/listallsongs", async (_req: Request, res: Response) => {
     }));
     sendResponse<PlaylistItem[]>(res, playlistItems);
   } catch (error) {
-    handleError(res, error.message);
+    handleError(res, ERROR_MESSAGES.NO_SONG);
   }
 });
 
@@ -243,29 +243,10 @@ player.get(
       await MpdConnection.playStation(name as string);
       sendResponse(res, { name });
     } catch (error) {
-      handleError(res, error.message);
+      handleError(res, ERROR_MESSAGES.NO_SONG);
     }
   }
 );
-
-// player.get("/playlistcontent", async (req: Request<{}, {}, {}, Query>, res: Response) => {
-//   try {
-//     const { name } = req.query;
-
-//     if (!name) {
-//       return sendError(res, ERROR_MESSAGES.NO_PLAYLIST);
-//     }
-
-//     const m3uItems = await MpdConnection.listPlaylist(name as string||null);
-//     const playlistItems: PlaylistItem[] = m3uItems.map(item => ({
-//       file: item.file,
-//       title: item.song
-//     }));
-//     sendResponse<PlaylistItem[]>(res, playlistItems);
-//   } catch (error) {
-//     handleError(res, error);
-//   }
-// });
 
 player.get(
   "/searchByArtist",
@@ -283,7 +264,7 @@ player.get(
       }));
       sendResponse<PlaylistItem[]>(res, playlistItems);
     } catch (error) {
-      handleError(res, error.message);
+      handleError(res, ERROR_MESSAGES.NO_ARTIST);
     }
   }
 );
@@ -304,7 +285,7 @@ player.get(
       }));
       sendResponse<PlaylistItem[]>(res, playlistItems);
     } catch (error) {
-      handleError(res, error.message);
+      handleError(res, ERROR_MESSAGES.NO_TITLE);
     }
   }
 );
