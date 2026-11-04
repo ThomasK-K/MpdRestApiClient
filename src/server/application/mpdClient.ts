@@ -1,20 +1,12 @@
-import mpd, { MPD } from "mpd2";
-import dotenv from 'dotenv';
+import Mopidy from "mopidy";
+import dotenv from "dotenv";
 import * as path from "path";
-// import loadImageandAlbum from "../utils/getAlbumart";
 import { loadfile as loadImageandAlbum, parseM3UFile } from "../utils";
 import { WS } from "./ws";
+
 dotenv.config();
 
-var debug = require("debug")("mpdclient");
-
-type MpdStatus = "disconnected" | "connecting" | "reconnecting" | "ready";
-
-type m3udata = {
-  song: string;
-  file: string;
-  icon?: string;
-};
+const debug = require("debug")("mpdclient");
 
 type m3ustation = {
   name: string;
@@ -40,16 +32,18 @@ type Status = {
   nextsong?: number;
   nextsongid?: number;
 };
+
 type Song = {
   file: string;
-  title: string; // artist - title
-  name: string; // station
+  title: string;
+  name: string;
   Id: number;
   artist?: string;
   album?: string;
   time?: string;
   duration?: string;
 };
+
 type DispSong = {
   artist: string;
   title: string;
@@ -61,64 +55,165 @@ type DispSong = {
   time?: string;
   duration?: string;
 };
+
 type playlist = {
   playlist: string;
-  // "last modified":string
 };
+
+type ConnectedMopidy = Mopidy &
+  Required<
+    Pick<Mopidy, "playback" | "tracklist" | "library" | "playlists" | "mixer">
+  >;
+
 const MpcStatus = Object.freeze({
   disconnected: 1,
   connecting: 2,
   reconnecting: 3,
   ready: 4,
 });
+
 const config = {
-  host: process.env.HOST || "localhost",
   playlistPath: process.env.PLAYLISTPATH || "/home/tkk/config/mpd/playlists",
-  mpdPort: parseInt(process.env.MPDPORTHOST || "6600"),
-   mpdHost: process.env.MPDHOST || "localhost",
-  coverArchive: process.env.COVERARCHIVE || "https://coverartarchive.org/release-group"
+  mopidyPort: parseInt(process.env.MOPIDYPORT || "6680", 10),
+  mopidyHost: process.env.MOPIDYHOST || process.env.MPDHOST || "localhost",
+  coverArchive:
+    process.env.COVERARCHIVE || "https://coverartarchive.org/release-group",
 };
 
 export class MpdConnection {
-  // Statische Eigenschaft, um die einzige Instanz der Klasse zu speichern
   private static connection: MpdConnection;
-  private static mpdClient: MPD.Client;
-  private static mpdStatus = MpcStatus.disconnected;
-  private static previousSong: DispSong = null;
+  private static mopidyClient: Mopidy | null = null;
+  private static mpdStatus: number = MpcStatus.disconnected;
+  private static previousSong: DispSong | null = null;
 
-  // Privater Konstruktor verhindert die Instanziierung von außerhalb der Klasse
-  private constructor() {
-    // console.log("Eine neue MpdConnection wurde erstellt.");
-  }
-  // Statische Methode, um die einzige Instanz der Klasse zurückzugeben
+  private constructor() {}
+
   static getConnection(): MpdConnection {
     if (!MpdConnection.connection) {
       MpdConnection.connection = new MpdConnection();
     }
     return MpdConnection.connection;
   }
-  ////  Getter   #############################################
-  static async getPlayerStatus(): Promise<string> {
-    const stat = await MpdConnection.getStatus();
-    // const status = mpd.parseObject(stat);
-    return stat.state;
+
+  private static getClient(): ConnectedMopidy {
+    const client = MpdConnection.mopidyClient as ConnectedMopidy | null;
+    if (
+      !client?.playback ||
+      !client.tracklist ||
+      !client.library ||
+      !client.playlists ||
+      !client.mixer
+    ) {
+      throw new Error("Mopidy client is not connected");
+    }
+    return client;
   }
+
+  static async getPlayerStatus(): Promise<string> {
+    return (await MpdConnection.getStatus()).state;
+  }
+
   static async getStatus(): Promise<Status> {
-    const stat = await MpdConnection.mpdClient.sendCommand("status");
-    const status = mpd.parseObject<Status>(stat);
-    return status;
+    const client = MpdConnection.getClient();
+    const [
+      state,
+      volume,
+      repeat,
+      random,
+      single,
+      consume,
+      playlistlength,
+      currentTlTrack,
+      tracks,
+      timePosition,
+      nextTlid,
+      playlistVersion,
+    ] = await Promise.all([
+      client.playback.getState(),
+      client.mixer.getVolume(),
+      client.tracklist.getRepeat(),
+      client.tracklist.getRandom(),
+      client.tracklist.getSingle(),
+      client.tracklist.getConsume(),
+      client.tracklist.getLength(),
+      client.playback.getCurrentTlTrack(),
+      client.tracklist.getTlTracks(),
+      client.playback.getTimePosition(),
+      client.tracklist.getNextTlid(),
+      client.tracklist.getVersion(),
+    ]);
+    const song = currentTlTrack
+      ? await client.tracklist.index({ tl_track: currentTlTrack })
+      : null;
+    const currentTrack = currentTlTrack?.track;
+
+    return {
+      volume: volume ?? 0,
+      repeat,
+      random,
+      single,
+      consume,
+      playlist: playlistVersion,
+      state:
+        state === "playing" ? "play" : state === "paused" ? "pause" : "stop",
+      playlistlength,
+      song: song ?? -1,
+      songid: currentTlTrack?.tlid ?? -1,
+      bitrate: Number(currentTrack?.bitrate) || 0,
+      elapsed: timePosition == null ? undefined : timePosition / 1000,
+      duration:
+        currentTrack?.length == null ? undefined : currentTrack.length / 1000,
+      nextsongid: nextTlid ?? undefined,
+      nextsong:
+        nextTlid == null
+          ? undefined
+          : tracks.findIndex((track) => track.tlid === nextTlid),
+    };
   }
 
   static async getCurrentSong(): Promise<DispSong> {
     try {
-      const res = await MpdConnection.mpdClient.sendCommands([
-        mpd.cmd("currentsong", []),
+      const client = MpdConnection.getClient();
+      const [track, tlTrack, streamTitle, timePosition] = await Promise.all([
+        client.playback.getCurrentTrack(),
+        client.playback.getCurrentTlTrack(),
+        client.playback.getStreamTitle(),
+        client.playback.getTimePosition(),
       ]);
+      if (!track) {
+        return { artist: "", title: "" };
+      }
 
-      const song = mpd.parseObject<Song>(res);
-      let dispsong = getTitleandArtist(song);
+      let artist = "";
+      let title = "";
+      if (!track.artists || track.artists.length === 0) {
+        ({ title, artist } = await getTitleandArtist({
+          file: track.uri,
+          title: streamTitle || track.name || "",
+          name: track.name,
+          Id: 0,
+          artist: "",
+          album: track.album?.name,
+          time: timePosition == null ? undefined : String(timePosition / 1000),
+          duration:
+            track.length == null ? undefined : String(track.length / 1000),
+        }));
+      }
 
-      // Only load album info if the song has changed
+      const dispsong: DispSong = {
+        artist:
+          artist || track.artists?.map((item) => item.name).join(", ") || "",
+        title: title || streamTitle || track.name || "",
+        file: track.uri,
+        albumname: track.album?.name,
+        time: timePosition == null ? undefined : String(timePosition / 1000),
+        duration:
+          track.length == null ? undefined : String(track.length / 1000),
+      };
+      if (track.uri?.startsWith("http")) {
+        dispsong.station = track.name;
+      }
+
       if (
         !MpdConnection.previousSong ||
         MpdConnection.previousSong.artist !== dispsong.artist ||
@@ -128,7 +223,7 @@ export class MpdConnection {
           const data = await loadImageandAlbum(dispsong.artist, dispsong.title);
           if (data) {
             if (data.images && data.images.length > 0) {
-              dispsong = { ...dispsong, album: data.images[2] };
+              dispsong.album = data.images[2];
             }
             if (data.albumname) {
               dispsong.albumname = data.albumname;
@@ -137,23 +232,16 @@ export class MpdConnection {
               dispsong.wiki = data.wiki;
             }
           }
-          // Update previous song after successful load
           MpdConnection.previousSong = { ...dispsong };
         } catch (albumError) {
           debug("Error loading album info:", albumError);
-          // Continue without album info
         }
       } else {
-        // Use cached album info from previous song
-        dispsong = {
-          ...dispsong,
-          album: MpdConnection.previousSong.album,
-          albumname: MpdConnection.previousSong.albumname,
-          wiki: MpdConnection.previousSong.wiki,
-        };
+        dispsong.album = MpdConnection.previousSong.album;
+        dispsong.albumname = MpdConnection.previousSong.albumname;
+        dispsong.wiki = MpdConnection.previousSong.wiki;
       }
 
-      debug("####  album   ###", dispsong.album);
       return dispsong;
     } catch (error: unknown) {
       if (error instanceof Error) {
@@ -163,205 +251,219 @@ export class MpdConnection {
       throw new Error("Failed to get current song");
     }
   }
-  static async listall(): Promise<Song[]> {
-    const res = await MpdConnection.mpdClient.sendCommands([
-      mpd.cmd("listall", []),
-    ]);
-    const songs = await mpd.parseNestedList<Song>(res);
-    return songs;
-  }
-  static async playStation(url: string): Promise<void> {
-    const res = await MpdConnection.mpdClient.sendCommands([
-      "clear",
-      `add "${url}"`,
-      "play",
-    ]);
-  }
-  static async playSong(song: string): Promise<void> {
-    // Decode URL
-    const url = decodeURI(song);
-    const res = await MpdConnection.mpdClient.sendCommands([
-      "clear",
-      `add "${url}"`,
-      "play",
-    ]);
-  }
-  static async playstation(playlistName, stationName): Promise<m3ustation[]> {
-    try {
 
-      const filePath = path.join(
-        `${config.playlistPath}`,
-        `${playlistName}.m3u`
-      );
+  static async listall(): Promise<Song[]> {
+    const results = await MpdConnection.getClient().library.search({
+      query: { any: [""] },
+    });
+    return results.flatMap((result) =>
+      result.tracks.map((track) => ({
+        file: track.uri,
+        title: track.name,
+        name: track.name,
+        Id: 0,
+        artist: track.artists?.map((artist) => artist.name).join(", "),
+        album: track.album?.name,
+        time: track.length == null ? undefined : String(track.length / 1000),
+        duration:
+          track.length == null ? undefined : String(track.length / 1000),
+      })),
+    );
+  }
+
+  private static async playUri(uri: string): Promise<void> {
+    const client = MpdConnection.getClient();
+    await client.tracklist.clear();
+    await client.tracklist.add({ uris: [uri] });
+    await client.playback.play({});
+  }
+
+  static async playStation(url: string): Promise<void> {
+    await MpdConnection.playUri(url);
+  }
+
+  static async playSong(song: string): Promise<void> {
+    await MpdConnection.playUri(decodeURI(song));
+  }
+
+  static async playstation(
+    playlistName: string,
+    stationName: string,
+  ): Promise<m3ustation[]> {
+    try {
+      const filePath = path.join(config.playlistPath, `${playlistName}.m3u`);
       const playlist = await parseM3UFile(filePath);
-      // get url from playlist
       const url = playlist.find((item) => item.name === stationName)?.url;
       if (!url) {
         throw new Error(
-          `Station ${stationName} not found in playlist ${playlistName}`
+          `Station ${stationName} not found in playlist ${playlistName}`,
         );
       }
-      // Clear current playlist and add the selected station
-      await MpdConnection.mpdClient.sendCommands([
-        "clear",
-        `add "${url}"`,
-        "play",
-      ]);
-      // Optionally, you can also set the volume or other settings here
+      await MpdConnection.playUri(url);
       debug("###    ####", filePath, playlist, stationName);
-
       return playlist;
     } catch (error: unknown) {
       if (error instanceof Error) {
-        debug("Error getting plastation:", error.message);
+        debug("Error getting playlist station:", error.message);
         throw error;
       }
-      throw new Error("Failed to get current song");
+      throw new Error("Failed to play station");
     }
   }
-  static async getAllPlaylists(): Promise<playlist[]> {
-    const res = await MpdConnection.mpdClient.sendCommand("listplaylists");
-    const playlists = await mpd.parseNestedList<playlist>(res);
-    // console.log('#####', playlists)
-    return playlists;
-  }
-  static async listPlaylist(playlist: string): Promise<m3ustation[]> {
-  try {
-    const res = await MpdConnection.mpdClient.sendCommands([
-      mpd.cmd("listplaylist", [playlist]),
-    ]);
-    debug("#### listPlaylist ####", process.env);
-    const filePath = path.join(
-      `${config.playlistPath}`,
-      `${playlist}.m3u`
-    );
-    const res1 = await parseM3UFile(filePath);
-    debug("###    ####", filePath, res1);
 
-    return res1;
-  } catch (error) {
-    debug("Error listing playlist:", error);
-    throw new Error(`Failed to list playlist ${playlist}: ${error.message}`);
+  static async getAllPlaylists(): Promise<playlist[]> {
+    const playlists = await MpdConnection.getClient().playlists.asList();
+    return playlists.map((item) => ({ playlist: item.name }));
   }
-}
-  /**
-   * Retrieves the current playlist from the MPD server.
-   * 
-   * This method sends a 'playlist' command to the MPD server and returns the raw response.
-   * The response typically contains a list of songs in the current playlist.
-   * 
-   * @returns A Promise that resolves to a string containing the raw playlist data from the MPD server.
-   * @throws Will throw an error if the MPD command fails or if there's a connection issue.
-   */
+
+  static async listPlaylist(playlist: string): Promise<m3ustation[]> {
+    try {
+      const filePath = path.join(config.playlistPath, `${playlist}.m3u`);
+      return await parseM3UFile(filePath);
+    } catch (error) {
+      debug("Error listing playlist:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to list playlist ${playlist}: ${message}`);
+    }
+  }
+
   static async playlist(): Promise<string> {
-    // await MpdConnection.mpdClient.sendCommand("load swr");
-    const res = await MpdConnection.mpdClient.sendCommand("playlist");
-    return res;
+    const tracks = await MpdConnection.getClient().tracklist.getTracks();
+    return tracks.map((track) => track.uri).join("\n");
   }
+
   static steuerung = async (mode: string): Promise<string> => {
     try {
-      await MpdConnection.mpdClient.sendCommand(mode);
-
-      const playerStatus = await MpdConnection.getPlayerStatus();
-      return playerStatus;
+      const playback = MpdConnection.getClient().playback;
+      switch (mode) {
+        case "play":
+          await playback.play({});
+          break;
+        case "pause":
+          await playback.pause();
+          break;
+        case "stop":
+          await playback.stop();
+          break;
+        case "next":
+          await playback.next();
+          break;
+        case "previous":
+          await playback.previous();
+          break;
+        default:
+          throw new Error(`Unsupported playback command: ${mode}`);
+      }
+      return MpdConnection.getPlayerStatus();
     } catch (error) {
       debug("Error executing command:", mode, error);
       throw new Error(
-        error instanceof Error ? error.message : "Command execution failed"
+        error instanceof Error ? error.message : "Command execution failed",
       );
     }
   };
 
   static searchByArtist = async (artist: string): Promise<string[]> => {
-    try {
-      const response = await MpdConnection.mpdClient.sendCommand(
-        `search artist "${artist}"`
-      );
-      const results = response
-        .split("\n")
-        .filter((line) => line.startsWith("file:"));
-      return results.map((line) => line.replace("file: ", ""));
-    } catch (error) {
-      debug("Error searching by artist:", error);
-      throw new Error(
-        error instanceof Error ? error.message : "Failed to search by artist"
-      );
-    }
+    const results = await MpdConnection.getClient().library.search({
+      query: { artist: [artist] },
+    });
+    return results.flatMap((result) => result.tracks.map((track) => track.uri));
   };
 
   static searchByTitle = async (title: string): Promise<string[]> => {
-    try {
-      const response = await MpdConnection.mpdClient.sendCommand(
-        `search title "${title}"`
-      );
-      const results = response
-        .split("\n")
-        .filter((line) => line.startsWith("file:"));
-      return results.map((line) => line.replace("file: ", ""));
-    } catch (error) {
-      debug("Error searching by title:", error);
-      throw new Error(
-        error instanceof Error ? error.message : "Failed to search by title"
-      );
-    }
+    const results = await MpdConnection.getClient().library.search({
+      query: { track_name: [title] },
+    });
+    return results.flatMap((result) => result.tracks.map((track) => track.uri));
   };
-  
 
   static setVol = async (vol: string): Promise<void> => {
     try {
-      await MpdConnection.mpdClient.sendCommand(`setvol ${vol}`);
+      await MpdConnection.getClient().mixer.setVolume({ volume: Number(vol) });
     } catch (error) {
       debug("Error setting volume:", error);
       throw new Error(
-        error instanceof Error ? error.message : "Failed to set volume"
+        error instanceof Error ? error.message : "Failed to set volume",
       );
     }
   };
-  static connect = async () => {
-    try {
-      MpdConnection.connection = new MpdConnection();
-      const mpdconfig = {
-        host: config.mpdHost,
-        port: config.mpdPort,
-      };
-      const mpc = await mpd.connect(mpdconfig);
-      MpdConnection.mpdClient = mpc;
-      debug("connecting to mpd port %o", mpdconfig.port);
 
-      // Set up event handling for MPD updates
-      MpdConnection.mpdClient.on("system", async (name) => {
-        debug("System update received: " + name);
-        const wsServer = WS._wss;
-        switch (name) {
-          case "playlist":
-            debug("#### listeners", wsServer.listenerCount);
-            WS.broadcastMessage(
-              wsServer,
-              "REQUEST_CURRENTSONG",
-              await MpdConnection.getCurrentSong()
-            );
-            break;
-          case "player":
-            const status = await MpdConnection.getStatus();
-            debug("#### player event ####:", status);
-            WS.broadcastMessage(wsServer, "REQUEST_STATUS", status);
-            WS.broadcastMessage(
-              wsServer,
-              "REQUEST_CURRENTSONG",
-              await MpdConnection.getCurrentSong()
-            );
-            break;
-          default:
-            break;
-        }
+  static connect = async (): Promise<void> => {
+    MpdConnection.mpdStatus = MpcStatus.connecting;
+    MpdConnection.connection = new MpdConnection();
+    const webSocketUrl = `ws://${config.mopidyHost}:${config.mopidyPort}/mopidy/ws`;
+    const client = new Mopidy({ webSocketUrl, autoConnect: false });
+    MpdConnection.mopidyClient = client;
+
+    client.on("event:tracklistChanged", async () => {
+      await MpdConnection.broadcastCurrentSong();
+    });
+    client.on("event:trackPlaybackStarted", async () => {
+      await MpdConnection.broadcastPlayerUpdate();
+    });
+    client.on("event:playbackStateChanged", async () => {
+      await MpdConnection.broadcastPlayerUpdate();
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const onOnline = () => {
+        client.off("state:online", onOnline);
+        client.off("websocket:error", onError);
+        MpdConnection.mpdStatus = MpcStatus.ready;
+        resolve();
+      };
+      const onError = (error: Error) => {
+        client.off("state:online", onOnline);
+        client.off("websocket:error", onError);
+        MpdConnection.mpdStatus = MpcStatus.disconnected;
+        reject(error);
+      };
+      client.on("state:online", onOnline);
+      client.on("websocket:error", onError);
+      client.on("reconnecting", () => {
+        MpdConnection.mpdStatus = MpcStatus.reconnecting;
       });
-    } catch (error) {
-      console.log(error);
-    }
+      client.connect();
+    });
+    debug("Connected to Mopidy WebSocket %s", webSocketUrl);
   };
+
+  private static async broadcastCurrentSong(): Promise<void> {
+    const wsServer = WS._wss;
+    if (wsServer) {
+      WS.broadcastMessage(
+        wsServer,
+        "REQUEST_CURRENTSONG",
+        await MpdConnection.getCurrentSong(),
+      );
+    }
+  }
+
+  private static async broadcastPlayerUpdate(): Promise<void> {
+    const wsServer = WS._wss;
+    if (!wsServer) {
+      return;
+    }
+    WS.broadcastMessage(
+      wsServer,
+      "REQUEST_STATUS",
+      await MpdConnection.getStatus(),
+    );
+    await MpdConnection.broadcastCurrentSong();
+  }
 }
 
-const getTitleandArtist = (song: Song): DispSong => {
+export async function getImage({ id }) {
+  const response = await fetch(`${config.coverArchive}/${id}`);
+  if (response.status === 404) return;
+  if (response.status === 503) throw new Error("Rate limit exceeded!");
+  const {
+    images: [image],
+  } = await response.json();
+  return image.image;
+}
+
+const getTitleandArtist = async (song: Song): Promise<DispSong> => {
   let zeichen = "-";
 
   var arr: string[];
@@ -378,7 +480,7 @@ const getTitleandArtist = (song: Song): DispSong => {
     }
     if (arr.length) {
       dispsong.artist = arr[0];
-      dispsong.title = arr.at(-1);
+      dispsong.title = arr.at(-1) ?? "";
       dispsong.title.indexOf(".")
         ? (dispsong.title = dispsong.title.split(".")[0])
         : dispsong.title;
@@ -388,19 +490,3 @@ const getTitleandArtist = (song: Song): DispSong => {
 
   return dispsong;
 };
-
-export async function getImage({ id }) {
-  const response = await fetch(
-    `${
-      config.coverArchive
-    }/${id}`
-  );
-  // No image found for this release, try next
-  if (response.status === 404) return;
-  // Rate limit exceeded
-  if (response.status === 503) throw new Error("Rate limit exceeded!");
-  const {
-    images: [image],
-  } = await response.json();
-  return image.image;
-}

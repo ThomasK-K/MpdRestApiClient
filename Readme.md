@@ -11,7 +11,7 @@ A modern Music Player Daemon (MPD) client with REST API and WebSocket support.
 
 ## Prerequisites
 - Node.js >= 14.0.0
-- MPD server running
+- Mopidy server with its HTTP/WebSocket frontend enabled
 - Last.fm API key (for album artwork)
 
 ## Environment Configuration
@@ -21,9 +21,10 @@ Create a `.env` file in the root directory with the following variables:
 HOST=localhost          # Server host
 PORT=8000              # HTTP server port
 SOCKETPORT=3001        # WebSocket port
-MPDPORTHOST=6600      # MPD server port
+MOPIDYHOST=localhost  # Mopidy server host
+MOPIDYPORT=6680       # Mopidy HTTP/WebSocket port
 LASTFM_APIKEY=        # Your Last.fm API key
-PLAYLISTPATH=         # Path to MPD playlists
+PLAYLISTPATH=         # Path to local M3U playlists
 MUSICPATH=            # Path to music library
 AUDIOSCROBBLER=http://ws.audioscrobbler.com/2.0
 
