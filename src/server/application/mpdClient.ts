@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import * as path from "path";
 import { loadfile as loadImageandAlbum, parseM3UFile } from "../utils";
 import { WS } from "./ws";
+import type { PlaylistItem } from "../interfaces/responses";
 
 dotenv.config();
 
@@ -363,19 +364,46 @@ export class MpdConnection {
     }
   };
 
-  static searchByArtist = async (artist: string): Promise<string[]> => {
+  private static searchTracks = async (query: {
+    artist?: string[];
+    track_name?: string[];
+    album?: string[];
+  }): Promise<PlaylistItem[]> => {
     const results = await MpdConnection.getClient().library.search({
-      query: { artist: [artist] },
+      query,
+      ...(query.track_name ? { exact: true } : {}),
+      ...(query.album ? { exact: true } : {}),
+
     });
-    return results.flatMap((result) => result.tracks.map((track) => track.uri));
+    return results.flatMap((result) =>
+      result.tracks.map((track) => ({
+        file: track.uri,
+        title: track.name,
+        artist: track.artists?.map((item) => item.name).join(", "),
+        album: track.album?.name,
+        time: track.length == null ? undefined : String(track.length / 1000),
+        duration: track.length == null ? undefined : track.length / 1000,
+      })),
+    );
   };
 
-  static searchByTitle = async (title: string): Promise<string[]> => {
-    const results = await MpdConnection.getClient().library.search({
-      query: { track_name: [title] },
-    });
-    return results.flatMap((result) => result.tracks.map((track) => track.uri));
+  static searchByArtist = async (artist: string): Promise<PlaylistItem[]> =>
+    MpdConnection.searchTracks({ artist: [artist] });
+
+  static searchByTitle = async (title: string): Promise<PlaylistItem[]> => {
+    return MpdConnection.searchTracks({ track_name: [title] });
   };
+
+    static searchByAlbum = async (album: string): Promise<PlaylistItem[]> => {
+    return MpdConnection.searchTracks({ album: [album] });
+
+  };
+
+  static searchByArtistAndTitle = async (
+    artist: string,
+    title: string,
+  ): Promise<PlaylistItem[]> =>
+    MpdConnection.searchTracks({ artist: [artist], track_name: [title] });
 
   static setVol = async (vol: string): Promise<void> => {
     try {

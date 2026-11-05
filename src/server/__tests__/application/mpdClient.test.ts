@@ -26,7 +26,9 @@ const mockClient = {
     getVersion: jest.fn(),
     index: jest.fn(),
   },
-  library: {},
+  library: {
+    search: jest.fn(),
+  },
   playlists: {},
 };
 
@@ -94,6 +96,53 @@ describe("MpdConnection", () => {
     await expect(MpdConnection.getCurrentSong()).resolves.toEqual({
       artist: "",
       title: "",
+    });
+  });
+
+  it("returns track metadata with Tidal search results", async () => {
+    mockClient.library.search.mockResolvedValue([
+      {
+        tracks: [
+          {
+            uri: "tidal:track:48122046:353414884:353414888",
+            name: "Example title",
+            artists: [{ name: "Example artist" }],
+            album: { name: "Example album" },
+            length: 213000,
+          },
+        ],
+      },
+    ]);
+
+    await expect(MpdConnection.searchByTitle("Example title")).resolves.toEqual([
+      {
+        file: "tidal:track:48122046:353414884:353414888",
+        title: "Example title",
+        artist: "Example artist",
+        album: "Example album",
+        time: "213",
+        duration: 213,
+      },
+    ]);
+    expect(mockClient.library.search).toHaveBeenCalledWith({
+      query: { track_name: ["Example title"] },
+      exact: true,
+    });
+  });
+
+  it("searches by artist and title together", async () => {
+    mockClient.library.search.mockResolvedValue([]);
+
+    await expect(
+      MpdConnection.searchByArtistAndTitle("Example artist", "Example title"),
+    ).resolves.toEqual([]);
+
+    expect(mockClient.library.search).toHaveBeenCalledWith({
+      query: {
+        artist: ["Example artist"],
+        track_name: ["Example title"],
+      },
+      exact: true,
     });
   });
 });

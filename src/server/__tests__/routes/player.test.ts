@@ -8,6 +8,7 @@ import { MpdConnection } from '../../application';
 const mockGetStatus = jest.fn();
 const mockSteuerung = jest.fn();
 const mockSetVol = jest.fn();
+const mockSearchByArtistAndTitle = jest.fn();
 jest.mock('../../application', () => ({
   MpdConnection: {
     getConnection: jest.fn(),
@@ -16,6 +17,7 @@ jest.mock('../../application', () => ({
     getCurrentSong: jest.fn(),
     steuerung: mockSteuerung,
     setVol: mockSetVol,
+    searchByArtistAndTitle: mockSearchByArtistAndTitle,
   },
 }));
 
@@ -77,6 +79,28 @@ describe('Player Routes', () => {
         success: false,
         error: 'MPD error',
       });
+    });
+  });
+
+  describe('GET /player/search', () => {
+    it('searches by artist and title', async () => {
+      const results = [{
+        file: 'tidal:track:48122046:353414884:353414888',
+        title: 'Example title',
+        artist: 'Example artist',
+      }];
+      mockSearchByArtistAndTitle.mockResolvedValue(results);
+
+      const response = await request(app)
+        .get('/player/search')
+        .query({ artist: 'Example artist', title: 'Example title' })
+        .expect(200);
+
+      expect(mockSearchByArtistAndTitle).toHaveBeenCalledWith(
+        'Example artist',
+        'Example title',
+      );
+      expect(response.body).toEqual({ success: true, data: results });
     });
   });
 

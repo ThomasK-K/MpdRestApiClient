@@ -258,16 +258,32 @@ player.get(
         return handleError(res, ERROR_MESSAGES.NO_ARTIST, HTTP_BAD_REQUEST);
       }
 
-      const files = await MpdConnection.searchByArtist(artist as string);
-      const playlistItems: PlaylistItem[] = files.map((file) => ({
-        file: file,
-      }));
+      const playlistItems = await MpdConnection.searchByArtist(artist as string);
       sendResponse<PlaylistItem[]>(res, playlistItems);
     } catch (error) {
       handleError(res, ERROR_MESSAGES.NO_ARTIST);
     }
   }
 );
+
+player.get(
+  "/searchByAlbum",
+  async (req: Request<{}, {}, {}, Query>, res: Response) => {
+    try {
+      const { album } = req.query;
+
+      if (!album) {
+        return handleError(res, ERROR_MESSAGES.NO_TITLE, HTTP_BAD_REQUEST);
+      }
+
+      const playlistItems = await MpdConnection.searchByAlbum(album as string);
+      sendResponse<PlaylistItem[]>(res, playlistItems);
+    } catch (error) {
+      handleError(res, ERROR_MESSAGES.NO_TITLE);
+    }
+  }
+);
+
 
 player.get(
   "/searchByTitle",
@@ -279,15 +295,37 @@ player.get(
         return handleError(res, ERROR_MESSAGES.NO_TITLE, HTTP_BAD_REQUEST);
       }
 
-      const files = await MpdConnection.searchByTitle(title as string);
-      const playlistItems: PlaylistItem[] = files.map((file) => ({
-        file: file,
-      }));
+      const playlistItems = await MpdConnection.searchByTitle(title as string);
       sendResponse<PlaylistItem[]>(res, playlistItems);
     } catch (error) {
       handleError(res, ERROR_MESSAGES.NO_TITLE);
     }
   }
+);
+
+player.get(
+  "/search",
+  async (req: Request<{}, {}, {}, Query>, res: Response) => {
+    try {
+      const { artist, title } = req.query;
+
+      if (!artist || !title) {
+        return handleError(
+          res,
+          "Artist and title parameters are required",
+          HTTP_BAD_REQUEST,
+        );
+      }
+
+      const playlistItems = await MpdConnection.searchByArtistAndTitle(
+        artist as string,
+        title as string,
+      );
+      sendResponse<PlaylistItem[]>(res, playlistItems);
+    } catch (error) {
+      handleError(res, "Search failed");
+    }
+  },
 );
 
 export default player;
