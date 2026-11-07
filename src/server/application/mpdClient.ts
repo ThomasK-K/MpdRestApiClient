@@ -328,11 +328,20 @@ export class MpdConnection {
     }
   }
 
-  static async playlist(): Promise<string> {
+  static async playlist(): Promise<PlaylistItem[]> {
     const tracks = await MpdConnection.getClient().tracklist.getTracks();
-    return tracks.map((track) => track.uri).join("\n");
-  }
-
+    // return tracks.map((track) => track.uri).join("\n");
+       return tracks.map((track) => ({
+        file: track.uri,
+        title: track.name,
+        artist: track.artists?.map((item) => item.name).join(", "),
+        album: track.album?.name,
+        time: track.length == null ? undefined : String(track.length / 1000),
+        duration: track.length == null ? undefined : track.length / 1000,
+      }))
+    
+    }
+ 
   static steuerung = async (mode: string): Promise<string> => {
     try {
       const playback = MpdConnection.getClient().playback;
