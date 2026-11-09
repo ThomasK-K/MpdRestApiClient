@@ -38,11 +38,13 @@ export interface CurrentSong {
 
 export interface PlaylistItem {
   file: string;
+  name?: string;
   title?: string;
   artist?: string;
   album?: string;
   time?: string;
   duration?: number;
+  uri?: string;
 }
 
 export interface MpdResponse {

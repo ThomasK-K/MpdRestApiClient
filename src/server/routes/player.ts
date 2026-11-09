@@ -284,7 +284,6 @@ player.get(
   }
 );
 
-
 player.get(
   "/searchByTitle",
   async (req: Request<{}, {}, {}, Query>, res: Response) => {

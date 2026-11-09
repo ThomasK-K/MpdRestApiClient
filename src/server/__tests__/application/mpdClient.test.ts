@@ -130,6 +130,19 @@ describe("MpdConnection", () => {
     });
   });
 
+  it("rejects playlists without a valid Mopidy URI instead of crashing on startsWith", async () => {
+    mockClient.playlists = {
+      asList: jest.fn().mockResolvedValue([
+        { name: "Broken playlist", uri: undefined },
+      ]),
+      getItems: jest.fn(),
+    };
+
+    await expect(MpdConnection.listPlaylist("Broken playlist")).rejects.toThrow(
+      "has no valid uri",
+    );
+  });
+
   it("searches by artist and title together", async () => {
     mockClient.library.search.mockResolvedValue([]);
 

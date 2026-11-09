@@ -7,13 +7,25 @@ import type { PlaylistItem } from "../interfaces/responses";
 
 dotenv.config();
 
-const debug = require("debug")("mpdclient");
+const debug = require("debug")("mpdClient");
 
 type m3ustation = {
   name: string;
   url: string;
   icon: string;
 };
+
+type AlbumItem = {
+  uri: string;
+  name?: string;
+  artist?: string;
+  tracks: Mopidy.models.Track[];
+  images: Mopidy.models.Image[];
+};
+
+type PlaylistListResult =
+  | m3ustation[]
+  | Awaited<ReturnType<ConnectedMopidy["tracklist"]["getTracks"]>>;
 
 type Status = {
   volume: number;
@@ -124,11 +136,11 @@ export class MpdConnection {
       single,
       consume,
       playlistlength,
-      currentTlTrack,
       tracks,
-      timePosition,
       nextTlid,
       playlistVersion,
+      timePosition,
+      currentTlTrack,
     ] = await Promise.all([
       client.playback.getState(),
       client.mixer.getVolume(),
@@ -137,11 +149,11 @@ export class MpdConnection {
       client.tracklist.getSingle(),
       client.tracklist.getConsume(),
       client.tracklist.getLength(),
-      client.playback.getCurrentTlTrack(),
       client.tracklist.getTlTracks(),
-      client.playback.getTimePosition(),
       client.tracklist.getNextTlid(),
       client.tracklist.getVersion(),
+      client.playback.getTimePosition(),
+      client.playback.getCurrentTlTrack(),
     ]);
     const song = currentTlTrack
       ? await client.tracklist.index({ tl_track: currentTlTrack })
@@ -290,8 +302,12 @@ export class MpdConnection {
   static async playstation(
     playlistName: string,
     stationName: string,
-  ): Promise<m3ustation[]> {
+  ): Promise<PlaylistListResult> {
     try {
+      if (!stationName) {
+        return await MpdConnection.listPlaylist(playlistName);
+      }
+
       const filePath = path.join(config.playlistPath, `${playlistName}.m3u`);
       const playlist = await parseM3UFile(filePath);
       const url = playlist.find((item) => item.name === stationName)?.url;
@@ -311,37 +327,76 @@ export class MpdConnection {
       throw new Error("Failed to play station");
     }
   }
-
+  ////////////////////////////////////////////////
   static async getAllPlaylists(): Promise<playlist[]> {
     const playlists = await MpdConnection.getClient().playlists.asList();
     return playlists.map((item) => ({ playlist: item.name }));
   }
-
-  static async listPlaylist(playlist: string): Promise<m3ustation[]> {
+  ////////////////////////////////////////////////
+  static async listPlaylist(name: string): Promise<PlaylistListResult> {
     try {
-      const filePath = path.join(config.playlistPath, `${playlist}.m3u`);
-      return await parseM3UFile(filePath);
+      const client = MpdConnection.getClient();
+      const playlists = await client.playlists.asList();
+      const playlist = playlists.find((p) => p.name === name);
+      if (!playlist) {
+        throw new Error(`Playlist ${name} not found`);
+      }
+
+      const playlistUri = typeof playlist.uri === "string" ? playlist.uri : "";
+      if (!playlistUri) {
+        throw new Error(`Playlist ${name} has no valid uri`);
+      }
+
+      if (playlistUri.toLowerCase().startsWith("m3u")) {
+        const filePath = path.join(config.playlistPath, `${name}.m3u`);
+        return await parseM3UFile(filePath);
+      }
+
+      const refs = await client.playlists.getItems({ uri: playlistUri });
+      const lookupUris = (refs ?? [])
+        .map((ref) => ref.uri)
+        .filter(
+          (uri): uri is string => typeof uri === "string" && uri.length > 0,
+        );
+
+      const tracks = await client.library.lookup({
+        uris: lookupUris,
+      });
+      const playlistTracks = Object.values(tracks ?? {}).flat();
+      debug("Loaded playlist %s with %d tracks", name, playlistTracks.length);
+      playlistTracks.forEach((track) => {
+        track.album?.uri && debug("Album URI:", track.album.uri);
+        this.getAlbum(track.album?.uri ?? "").then((album) => {
+          if (album) {
+            debug("Album info for track %s:", track.name, album);
+          } else {
+            debug("No album info found for track %s", track.name);
+          }
+        });
+
+      }); 
+      
+      return playlistTracks;
     } catch (error) {
       debug("Error listing playlist:", error);
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to list playlist ${playlist}: ${message}`);
+      throw new Error(`Failed to list playlist ${name}: ${message}`);
     }
   }
 
   static async playlist(): Promise<PlaylistItem[]> {
     const tracks = await MpdConnection.getClient().tracklist.getTracks();
-    // return tracks.map((track) => track.uri).join("\n");
-       return tracks.map((track) => ({
-        file: track.uri,
-        title: track.name,
-        artist: track.artists?.map((item) => item.name).join(", "),
-        album: track.album?.name,
-        time: track.length == null ? undefined : String(track.length / 1000),
-        duration: track.length == null ? undefined : track.length / 1000,
-      }))
-    
-    }
- 
+    return tracks.map((track) => ({
+      file: track.uri,
+      title: track.name,
+      musicbrainz_id: track.musicbrainz_id,
+      artist: track.artists?.map((item) => item.name).join(", "),
+      album: track.album?.name,
+      time: track.length == null ? undefined : String(track.length / 1000),
+      duration: track.length == null ? undefined : track.length / 1000,
+    }));
+  }
+
   static steuerung = async (mode: string): Promise<string> => {
     try {
       const playback = MpdConnection.getClient().playback;
@@ -382,7 +437,6 @@ export class MpdConnection {
       query,
       ...(query.track_name ? { exact: true } : {}),
       ...(query.album ? { exact: true } : {}),
-
     });
     return results.flatMap((result) =>
       result.tracks.map((track) => ({
@@ -403,9 +457,8 @@ export class MpdConnection {
     return MpdConnection.searchTracks({ track_name: [title] });
   };
 
-    static searchByAlbum = async (album: string): Promise<PlaylistItem[]> => {
+  static searchByAlbum = async (album: string): Promise<PlaylistItem[]> => {
     return MpdConnection.searchTracks({ album: [album] });
-
   };
 
   static searchByArtistAndTitle = async (
@@ -440,6 +493,9 @@ export class MpdConnection {
     });
     client.on("event:playbackStateChanged", async () => {
       await MpdConnection.broadcastPlayerUpdate();
+    });
+    client.on("event:streamTitleChanged", async () => {
+      await MpdConnection.broadcastCurrentSong();
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -487,6 +543,41 @@ export class MpdConnection {
       await MpdConnection.getStatus(),
     );
     await MpdConnection.broadcastCurrentSong();
+  }
+
+  static async getAlbum(uri: string): Promise<AlbumItem | undefined> {
+    const client = MpdConnection.getClient();
+    try {
+      const result = await client.library.lookup({
+        uris: [uri],
+      });
+
+      const tracks = result[uri] ?? [];
+
+      tracks.forEach((track) => {
+        debug({
+          title: track.name,
+          artist: track.artists?.map((a) => a.name).join(", "),
+          album: track.album?.name,
+          uri: track.uri,
+        });
+      });
+
+      const images = await client.library.getImages({
+        uris: [uri],
+      });
+
+      return {
+        uri,
+        name: tracks[0]?.album?.name,
+        artist: tracks[0]?.artists?.map((a) => a.name).join(", "),
+        tracks,
+        images: images[uri] ?? [],
+      };
+    } catch (error) {
+      debug("Error loading album info:", error);
+    }
+    return undefined;
   }
 }
 
