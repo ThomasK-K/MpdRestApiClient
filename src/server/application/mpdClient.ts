@@ -193,6 +193,10 @@ export class MpdConnection {
         client.playback.getStreamTitle(),
         client.playback.getTimePosition(),
       ]);
+      
+      
+      
+      
       if (!track) {
         return { artist: "", title: "" };
       }
@@ -216,7 +220,7 @@ export class MpdConnection {
       const dispsong: DispSong = {
         artist:
           artist || track.artists?.map((item) => item.name).join(", ") || "",
-        title: title || streamTitle || track.name || "",
+        title: streamTitle || title ||track.name || "",
         file: track.uri,
         albumname: track.album?.name,
         time: timePosition == null ? undefined : String(timePosition / 1000),
@@ -646,7 +650,7 @@ const getTitleandArtist = async (song: Song): Promise<DispSong> => {
 
   var arr: string[];
   var dispsong: DispSong = { artist: "", title: "" };
-  const regexp = / - /g;
+  const regexp = / [-/] /g;
   if (song && song.title) {
     const count = (song.title.match(new RegExp(regexp, "g")) || []).length;
     if (count) {

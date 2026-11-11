@@ -65,20 +65,7 @@ npm run lint
 
 ## API Documentation
 
-### REST Endpoints
-
-| Endpoint | Method | Description | Query Parameters |
-|----------|--------|-------------|------------------|
-| `/player/status` | GET | Get current player status | None |
-| `/player/currentsong` | GET | Get current song info | None |
-| `/player/steuerung` | GET | Control playback | `command=play\|pause\|stop\|next\|previous` |
-| `/player/setvol` | GET | Set volume | `vol=0-100` |
-| `/player/listplaylists` | GET | Get playlists | None |
-| `/player/listallsongs` | GET | Get all songs | None |
-| `/player/searchByArtist` | GET | Search by artist | `artist=name` |
-| `/player/searchByTitle` | GET | Search by title | `title=name` |
-| `/player/playsong` | GET | Play song | `name=path` |
-| `/player/playstation` | GET | Play radio station | `playlistname=name&stationname=station` |
+The REST API endpoints and their query parameters are documented in the [API reference](docs/API.md).
 
 ### WebSocket Events
 - `onInit`: Connection established

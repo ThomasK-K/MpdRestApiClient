@@ -4,8 +4,12 @@ trash/
 dist/
 ssl/
 docs/
+!docs/
+docs/*
+!docs/API.md
 .idea/
 crash.log
 .env
 .vscode/
 .expo/
+rcp.sh
