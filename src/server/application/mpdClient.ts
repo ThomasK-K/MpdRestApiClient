@@ -299,7 +299,7 @@ export class MpdConnection {
     await MpdConnection.playUri(decodeURI(song));
   }
 
-  static async playstation(
+  static async getStation(
     playlistName: string,
     stationName: string,
   ): Promise<PlaylistListResult> {
@@ -364,18 +364,20 @@ export class MpdConnection {
       });
       const playlistTracks = Object.values(tracks ?? {}).flat();
       debug("Loaded playlist %s with %d tracks", name, playlistTracks.length);
-      playlistTracks.forEach((track) => {
+      playlistTracks.map((track) => {
         track.album?.uri && debug("Album URI:", track.album.uri);
         this.getAlbum(track.album?.uri ?? "").then((album) => {
           if (album) {
-            debug("Album info for track %s:", track.name, album);
+            // track.album = album.name;
+            debug("Album info for track %s:", track.name, album.images[0]?.uri);
+            // track.album.images = album.images;
           } else {
             debug("No album info found for track %s", track.name);
           }
         });
+        return track;
+      });
 
-      }); 
-      
       return playlistTracks;
     } catch (error) {
       debug("Error listing playlist:", error);
@@ -395,6 +397,22 @@ export class MpdConnection {
       time: track.length == null ? undefined : String(track.length / 1000),
       duration: track.length == null ? undefined : track.length / 1000,
     }));
+  }
+
+  static async playPlaylist(playlistname: string): Promise<void> {
+    try {
+     
+      // if (tracks.length === 0) {
+      //   throw new Error("No tracks in the playlist to play");
+      // }
+      await this.loadPlaylist(playlistname);
+
+    } catch (error) {
+      debug("Error playing playlist:", error);
+      throw new Error(
+        error instanceof Error ? error.message : "Failed to play playlist",
+      );
+    }
   }
 
   static steuerung = async (mode: string): Promise<string> => {
@@ -426,6 +444,38 @@ export class MpdConnection {
         error instanceof Error ? error.message : "Command execution failed",
       );
     }
+  };
+  ///////////////////////////////////////////   Private Methods  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  private static loadPlaylist = async (playlistName: string) => {
+    // Playlist-Inhalt abrufen
+
+    const refs = await MpdConnection.getClient().playlists.asList().then((playlists) => {
+      const playlist = playlists.find((p) => p.name === playlistName);
+      if (!playlist) {
+        throw new Error(`Playlist ${playlistName} not found`);
+      }
+      return MpdConnection.getClient().playlists.getItems({
+        uri: playlist.uri,
+      });
+    });
+   
+    const lookupUris = (refs ?? [])
+      .map((ref) => ref.uri)
+      .filter(
+        (uri): uri is string => typeof uri === "string" && uri.length > 0,
+      );
+
+    // Aktuelle Tracklist löschen
+    await MpdConnection.getClient().tracklist.clear();
+
+    // Tracks hinzufügen
+    await MpdConnection.getClient().tracklist.add({
+      uris: lookupUris,
+    });
+
+    // Wiedergabe starten
+    await MpdConnection.getClient().playback.play({});
   };
 
   private static searchTracks = async (query: {

@@ -170,15 +170,32 @@ player.get(
   }
 );
 player.get(
-  "/playstation",
+  "/getStation",
   async (req: Request<{}, {}, {}, Query>, res: Response) => {
     try {
       const { playlistname, stationname } = req.query;
 
       // ###############   read playlist, getUrlbyName and play station
-      const playerStatus = await MpdConnection.playstation(
+      const playerStatus = await MpdConnection.getStation(
         playlistname as string,
         stationname as string
+      );
+      sendResponse(res, { status: playerStatus });
+    } catch (error) {
+      handleError(res, ERROR_MESSAGES.INVALID_URL);
+    }
+  }
+);
+
+player.get(
+  "/playUri",
+  async (req: Request<{}, {}, {}, Query>, res: Response) => {
+    try {
+      const { uri } = req.query;
+
+      // ###############   read playlist, getUrlbyName and play station
+      const playerStatus = await MpdConnection.playStation(
+        uri as string,
       );
       sendResponse(res, { status: playerStatus });
     } catch (error) {
@@ -191,9 +208,9 @@ player.get(
   "/playlistcontent",
   async (req: Request<{}, {}, {}, Query>, res: Response) => {
     try {
-      const { name } = req.query;
+      const { playlistname } = req.query;
       const content = await MpdConnection.listPlaylist(
-        (name as string)
+        (playlistname as string)
       );
 
       sendResponse<any>(res, content);
@@ -203,62 +220,40 @@ player.get(
   }
 );
 /////////////////////////////////////////////////////////////////////////////
-player.get("/playlist", async (_req: Request, res: Response) => {
+player.get("/playlist", async (req: Request, res: Response) => {
   try {
-    const playlist = await MpdConnection.playlist();
+        const playlist = await MpdConnection.playlist();
+
+    // const playerStatus = convertToPlayerStatus(mpdStatus);
+    // sendResponse(res, playlist);
+  } catch (error) {
+    handleError(res, ERROR_MESSAGES.NO_PLAYLIST);
+  }
+});
+
+/////////////////////////////////////////////////////////////////////////////
+player.get("/playPlaylist", async (req: Request, res: Response) => {
+  try {
+     const { name } = req.query;
+    const playlist = await MpdConnection.playPlaylist(name as string);
     // const playerStatus = convertToPlayerStatus(mpdStatus);
     sendResponse(res, playlist);
   } catch (error) {
     handleError(res, ERROR_MESSAGES.NO_PLAYLIST);
   }
 });
-
-player.get("/listallsongs", async (_req: Request, res: Response) => {
-  try {
-    const songs = await MpdConnection.listall();
-    const playlistItems: PlaylistItem[] = songs.map((song) => ({
-      file: song.file,
-      title: song.title,
-      artist: song.artist,
-      album: song.album,
-      time: song.time,
-      duration: song.duration ? parseFloat(song.duration) : undefined,
-    }));
-    sendResponse<PlaylistItem[]>(res, playlistItems);
-  } catch (error) {
-    handleError(res, ERROR_MESSAGES.NO_SONG);
-  }
-});
-
-player.get(
-  "/playsong",
-  async (req: Request<{}, {}, {}, Query>, res: Response) => {
-    try {
-      const { name } = req.query;
-
-      if (!name) {
-        return handleError(res, ERROR_MESSAGES.NO_SONG, HTTP_BAD_REQUEST);
-      }
-
-      await MpdConnection.playStation(name as string);
-      sendResponse(res, { name });
-    } catch (error) {
-      handleError(res, ERROR_MESSAGES.NO_SONG);
-    }
-  }
-);
-
+///////////////////////////////////////////////////////////////////////////////
 player.get(
   "/searchByArtist",
   async (req: Request<{}, {}, {}, Query>, res: Response) => {
     try {
-      const { artist } = req.query;
-
-      if (!artist) {
+      const { name } = req.query;
+      
+      if (!name) {
         return handleError(res, ERROR_MESSAGES.NO_ARTIST, HTTP_BAD_REQUEST);
       }
-
-      const playlistItems = await MpdConnection.searchByArtist(artist as string);
+      
+      const playlistItems = await MpdConnection.searchByArtist(name as string);
       sendResponse<PlaylistItem[]>(res, playlistItems);
     } catch (error) {
       handleError(res, ERROR_MESSAGES.NO_ARTIST);
@@ -271,11 +266,11 @@ player.get(
   async (req: Request<{}, {}, {}, Query>, res: Response) => {
     try {
       const { album } = req.query;
-
+      
       if (!album) {
         return handleError(res, ERROR_MESSAGES.NO_TITLE, HTTP_BAD_REQUEST);
       }
-
+      
       const playlistItems = await MpdConnection.searchByAlbum(album as string);
       sendResponse<PlaylistItem[]>(res, playlistItems);
     } catch (error) {
@@ -289,11 +284,11 @@ player.get(
   async (req: Request<{}, {}, {}, Query>, res: Response) => {
     try {
       const { title } = req.query;
-
+      
       if (!title) {
         return handleError(res, ERROR_MESSAGES.NO_TITLE, HTTP_BAD_REQUEST);
       }
-
+      
       const playlistItems = await MpdConnection.searchByTitle(title as string);
       sendResponse<PlaylistItem[]>(res, playlistItems);
     } catch (error) {
@@ -307,7 +302,7 @@ player.get(
   async (req: Request<{}, {}, {}, Query>, res: Response) => {
     try {
       const { artist, title } = req.query;
-
+      
       if (!artist || !title) {
         return handleError(
           res,
@@ -315,7 +310,7 @@ player.get(
           HTTP_BAD_REQUEST,
         );
       }
-
+      
       const playlistItems = await MpdConnection.searchByArtistAndTitle(
         artist as string,
         title as string,
@@ -326,5 +321,56 @@ player.get(
     }
   },
 );
+
+//   try {
+  //     const songs = await MpdConnection.listall();
+  //     const playlistItems: PlaylistItem[] = songs.map((song) => ({
+    //       file: song.file,
+    //       title: song.title,
+    //       artist: song.artist,
+    //       album: song.album,
+    //       time: song.time,
+    //       duration: song.duration ? parseFloat(song.duration) : undefined,
+    //     }));
+    //     sendResponse<PlaylistItem[]>(res, playlistItems);
+    //   } catch (error) {
+      //     handleError(res, ERROR_MESSAGES.NO_SONG);
+      //   }
+      // });
+      
+      // player.get(
+      //   "/playstation",
+      //   async (req: Request<{}, {}, {}, Query>, res: Response) => {
+      //     try {
+      //       const { uri } = req.query;
+      
+      //       if (!uri) {
+      //         return handleError(res, ERROR_MESSAGES.NO_SONG, HTTP_BAD_REQUEST);
+      //       }
+      
+      //       await MpdConnection.playStation(uri as string);
+      //       sendResponse(res, { uri });
+      //     } catch (error) {
+      //       handleError(res, ERROR_MESSAGES.NO_SONG);
+      //     }
+      //   }
+      // );
+      
+      // player.get("/listallsongs", async (_req: Request, res: Response) => {
+      
+      // player.get("playPlaylist", async (req: Request<{}, {}, {}, Query>, res: Response) => {
+//   try {
+//     const { name } = req.query;
+
+//     if (!name) {
+//       return handleError(res, ERROR_MESSAGES.NO_PLAYLIST, HTTP_BAD_REQUEST);
+//     }
+
+//     await MpdConnection.playPlaylist(name as string);
+//     sendResponse(res, { name });
+//   } catch (error) {
+//     handleError(res, ERROR_MESSAGES.NO_PLAYLIST);
+//   }
+// });
 
 export default player;
