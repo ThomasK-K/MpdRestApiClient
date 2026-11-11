@@ -70,7 +70,10 @@ type DispSong = {
 };
 
 type playlist = {
-  playlist: string;
+  playlist: {
+    name: string;
+    uri: string;
+  };
 };
 
 type ConnectedMopidy = Mopidy &
@@ -193,10 +196,7 @@ export class MpdConnection {
         client.playback.getStreamTitle(),
         client.playback.getTimePosition(),
       ]);
-      
-      
-      
-      
+
       if (!track) {
         return { artist: "", title: "" };
       }
@@ -220,7 +220,7 @@ export class MpdConnection {
       const dispsong: DispSong = {
         artist:
           artist || track.artists?.map((item) => item.name).join(", ") || "",
-        title: streamTitle || title ||track.name || "",
+        title: streamTitle || title || track.name || "",
         file: track.uri,
         albumname: track.album?.name,
         time: timePosition == null ? undefined : String(timePosition / 1000),
@@ -334,8 +334,19 @@ export class MpdConnection {
   ////////////////////////////////////////////////
   static async getAllPlaylists(): Promise<playlist[]> {
     const playlists = await MpdConnection.getClient().playlists.asList();
-    return playlists.map((item) => ({ playlist: item.name }));
+    return playlists.map((item) => ({
+      playlist: { name: item.name, uri: item.uri },
+    }));
   }
+
+  static async getPlaylistsByType(type: string): Promise<playlist[]> {
+    const playlists = await MpdConnection.getClient().playlists.asList();
+
+    return playlists
+      .filter((item) => item.uri.toLowerCase().startsWith(type.toLowerCase()))
+      .map((item) => ({ playlist: { name: item.name, uri: item.uri } }));
+  }
+
   ////////////////////////////////////////////////
   static async listPlaylist(name: string): Promise<PlaylistListResult> {
     try {
@@ -405,12 +416,10 @@ export class MpdConnection {
 
   static async playPlaylist(playlistname: string): Promise<void> {
     try {
-     
       // if (tracks.length === 0) {
       //   throw new Error("No tracks in the playlist to play");
       // }
       await this.loadPlaylist(playlistname);
-
     } catch (error) {
       debug("Error playing playlist:", error);
       throw new Error(
@@ -450,20 +459,22 @@ export class MpdConnection {
     }
   };
   ///////////////////////////////////////////   Private Methods  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   private static loadPlaylist = async (playlistName: string) => {
     // Playlist-Inhalt abrufen
 
-    const refs = await MpdConnection.getClient().playlists.asList().then((playlists) => {
-      const playlist = playlists.find((p) => p.name === playlistName);
-      if (!playlist) {
-        throw new Error(`Playlist ${playlistName} not found`);
-      }
-      return MpdConnection.getClient().playlists.getItems({
-        uri: playlist.uri,
+    const refs = await MpdConnection.getClient()
+      .playlists.asList()
+      .then((playlists) => {
+        const playlist = playlists.find((p) => p.name === playlistName);
+        if (!playlist) {
+          throw new Error(`Playlist ${playlistName} not found`);
+        }
+        return MpdConnection.getClient().playlists.getItems({
+          uri: playlist.uri,
+        });
       });
-    });
-   
+
     const lookupUris = (refs ?? [])
       .map((ref) => ref.uri)
       .filter(

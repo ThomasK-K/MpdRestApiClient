@@ -180,7 +180,21 @@ player.get("/listplaylists", async (_req: Request, res: Response) => {
   try {
     const list = await MpdConnection.getAllPlaylists();
     const playlists = list.map((item) => item.playlist);
-    sendResponse<string[]>(res, playlists);
+    sendResponse<{name:string, uri:string}[]>(res, playlists);
+  } catch (error) {
+    handleError(res, ERROR_MESSAGES.NO_PLAYLIST);
+  }
+});
+
+player.get("/getPlaylistsByType", async (req: Request, res: Response) => {
+  try {
+    const { type } = req.query;
+
+    if (!type) {
+      return handleError(res, "Type parameter is required", HTTP_BAD_REQUEST);
+    }
+    const playlists = await MpdConnection.getPlaylistsByType(type as string);
+    sendResponse(res, playlists);
   } catch (error) {
     handleError(res, ERROR_MESSAGES.NO_PLAYLIST);
   }
