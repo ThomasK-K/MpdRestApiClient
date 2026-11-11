@@ -391,7 +391,7 @@ export class MpdConnection {
     return tracks.map((track) => ({
       file: track.uri,
       title: track.name,
-      musicbrainz_id: track.musicbrainz_id,
+      musicbrainz_id: track.musicbrainz_id?.toString(),
       artist: track.artists?.map((item) => item.name).join(", "),
       album: track.album?.name,
       time: track.length == null ? undefined : String(track.length / 1000),
