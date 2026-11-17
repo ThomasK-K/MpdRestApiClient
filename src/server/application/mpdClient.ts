@@ -1,9 +1,10 @@
 import Mopidy from "mopidy";
 import dotenv from "dotenv";
 import * as path from "path";
-import { loadfile as loadImageandAlbum, parseM3UFile } from "../utils";
+import { loadfile as loadImageandAlbum } from "../utils";
 import { WS } from "./ws";
 import type { PlaylistItem } from "../interfaces/responses";
+import console from "console";
 
 dotenv.config();
 
@@ -64,7 +65,7 @@ type DispSong = {
   album?: string;
   albumname?: string;
   wiki?: string;
-  file?: string;
+  uri?: string;
   time?: string;
   duration?: string;
 };
@@ -127,6 +128,55 @@ export class MpdConnection {
 
   static async getPlayerStatus(): Promise<string> {
     return (await MpdConnection.getStatus()).state;
+  }
+
+  static async createPlaylist(
+    name: string,
+    type?: string,
+  ): Promise<Mopidy.models.Playlist | null> {
+    return await MpdConnection.getClient().playlists.create({
+      name: name,
+      uri_scheme: type,
+    });
+  }
+
+  static async addTrackToPLaylist(
+    playlistUri: Mopidy.URI,
+    trackUri: string,
+  ): Promise<Mopidy.models.Playlist | null|unknown> {
+    // Lookup
+
+    try {
+      
+      const pl = await MpdConnection.getClient().playlists.lookup({
+            uri: playlistUri,
+          });
+      
+          if (!pl) {
+            throw new Error("Playlist nicht gefunden");
+          }
+          const tracks = await MpdConnection.getClient().playlists.getItems({uri:pl.uri});
+          // Track ergänzen
+      
+          const updatedPlaylist: Mopidy.models.Playlist = {
+            ...pl,
+            tracks: [
+               ...pl.tracks,
+              {
+                __model__: "Track",
+                uri: trackUri,
+              } as unknown as Mopidy.models.Track,
+            ],
+          };
+          return await MpdConnection.getClient().playlists.save({
+            playlist: updatedPlaylist,
+          });
+    } catch (error: unknown) {
+     throw new Error(
+        error instanceof Error ? error.message : "Problem beim Hizufügen",
+      );
+    }
+    
   }
 
   static async getStatus(): Promise<Status> {
@@ -221,8 +271,9 @@ export class MpdConnection {
         artist:
           artist || track.artists?.map((item) => item.name).join(", ") || "",
         title: streamTitle || title || track.name || "",
-        file: track.uri,
+        uri: track.uri,
         albumname: track.album?.name,
+        album: track.album?.uri,
         time: timePosition == null ? undefined : String(timePosition / 1000),
         duration:
           track.length == null ? undefined : String(track.length / 1000),
@@ -230,23 +281,42 @@ export class MpdConnection {
       if (track.uri?.startsWith("http")) {
         dispsong.station = track.name;
       }
-
+      const titlearr = dispsong.title.split(" - ");
+      if (titlearr.length > 1) {
+        dispsong.title = titlearr[1];
+        dispsong.artist = titlearr[0];
+      }
       if (
         !MpdConnection.previousSong ||
         MpdConnection.previousSong.artist !== dispsong.artist ||
         MpdConnection.previousSong.title !== dispsong.title
       ) {
         try {
-          const data = await loadImageandAlbum(dispsong.artist, dispsong.title);
-          if (data) {
-            if (data.images && data.images.length > 0) {
-              dispsong.album = data.images[2];
+          if (dispsong.album) {
+            try {
+              const images = await this.getAlbum(dispsong.album ?? "");
+              // console.log(images);
+              if (images && images.images.length > 0) {
+                dispsong.album = images.images[0].uri;
+              }
+            } catch (albumError) {
+              debug("Error loading album info:", albumError);
             }
-            if (data.albumname) {
-              dispsong.albumname = data.albumname;
-            }
-            if (data.wiki) {
-              dispsong.wiki = data.wiki;
+          } else {
+            const data = await loadImageandAlbum(
+              dispsong.artist,
+              dispsong.title,
+            );
+            if (data) {
+              if (data.images && data.images.length > 0) {
+                dispsong.album = data.images[2];
+              }
+              if (data.albumname) {
+                dispsong.albumname = data.albumname;
+              }
+              if (data.wiki) {
+                dispsong.wiki = data.wiki;
+              }
             }
           }
           MpdConnection.previousSong = { ...dispsong };
@@ -303,34 +373,45 @@ export class MpdConnection {
     await MpdConnection.playUri(decodeURI(song));
   }
 
-  static async getStation(
-    playlistName: string,
-    stationName: string,
-  ): Promise<PlaylistListResult> {
-    try {
-      if (!stationName) {
-        return await MpdConnection.listPlaylist(playlistName);
-      }
+  // static async getStation(
+  //   playlistName: string,
+  //   stationName: string,
+  // ): Promise<PlaylistListResult> {
+  //   try {
+  //     // if (!stationName) {
+  //     //   return await MpdConnection.listPlaylist(playlistName);
+  //     // }
 
-      const filePath = path.join(config.playlistPath, `${playlistName}.m3u`);
-      const playlist = await parseM3UFile(filePath);
-      const url = playlist.find((item) => item.name === stationName)?.url;
-      if (!url) {
-        throw new Error(
-          `Station ${stationName} not found in playlist ${playlistName}`,
-        );
-      }
-      await MpdConnection.playUri(url);
-      debug("###    ####", filePath, playlist, stationName);
-      return playlist;
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        debug("Error getting playlist station:", error.message);
-        throw error;
-      }
-      throw new Error("Failed to play station");
-    }
-  }
+  //     const tracks = await MpdConnection.listPlaylist(playlistName);
+
+  //     // const filePath = path.join(config.playlistPath, `${playlistName}.m3u`);
+  //     // // const playlist = await parseM3UFile(filePath);
+
+  //     const playlistUri = typeof playlist.uri === "string" ? playlist.uri : "";
+  //     if (!playlistUri) {
+  //       throw new Error(`Playlist ${name} has no valid uri`);
+  //     }
+
+  //     const client = MpdConnection.getClient();
+  //     const refs = await client.playlists.getItems({ uri: playlistUri });
+
+  //     const url = playlist.find((item) => item.name === stationName)?.url;
+  //     if (!url) {
+  //       throw new Error(
+  //         `Station ${stationName} not found in playlist ${playlistName}`,
+  //       );
+  //     }
+  //     await MpdConnection.playUri(url);
+  //     debug("###    ####", filePath, playlist, stationName);
+  //     return playlist;
+  //   } catch (error: unknown) {
+  //     if (error instanceof Error) {
+  //       debug("Error getting playlist station:", error.message);
+  //       throw error;
+  //     }
+  //     throw new Error("Failed to play station");
+  //   }
+  // }
   ////////////////////////////////////////////////
   static async getAllPlaylists(): Promise<playlist[]> {
     const playlists = await MpdConnection.getClient().playlists.asList();
@@ -362,12 +443,13 @@ export class MpdConnection {
         throw new Error(`Playlist ${name} has no valid uri`);
       }
 
-      if (playlistUri.toLowerCase().startsWith("m3u")) {
-        const filePath = path.join(config.playlistPath, `${name}.m3u`);
-        return await parseM3UFile(filePath);
-      }
+      // if (playlistUri.toLowerCase().startsWith("m3u")) {
+      //   const filePath = path.join(config.playlistPath, `${name}.m3u`);
+      //   return await parseM3UFile(filePath);
+      // }
 
       const refs = await client.playlists.getItems({ uri: playlistUri });
+
       const lookupUris = (refs ?? [])
         .map((ref) => ref.uri)
         .filter(
@@ -610,40 +692,25 @@ export class MpdConnection {
     await MpdConnection.broadcastCurrentSong();
   }
 
-  static async getAlbum(uri: string): Promise<AlbumItem | undefined> {
+  private static getAlbum = async (
+    album: string,
+  ): Promise<{
+    [index: string]: Mopidy.models.Image[];
+  }> => {
     const client = MpdConnection.getClient();
     try {
-      const result = await client.library.lookup({
-        uris: [uri],
-      });
-
-      const tracks = result[uri] ?? [];
-
-      tracks.forEach((track) => {
-        debug({
-          title: track.name,
-          artist: track.artists?.map((a) => a.name).join(", "),
-          album: track.album?.name,
-          uri: track.uri,
-        });
-      });
-
       const images = await client.library.getImages({
-        uris: [uri],
+        uris: [album],
       });
 
       return {
-        uri,
-        name: tracks[0]?.album?.name,
-        artist: tracks[0]?.artists?.map((a) => a.name).join(", "),
-        tracks,
-        images: images[uri] ?? [],
+        images: images[album] || [],
       };
     } catch (error) {
       debug("Error loading album info:", error);
     }
-    return undefined;
-  }
+    return { images: [] };
+  };
 }
 
 export async function getImage({ id }) {

@@ -35,6 +35,7 @@ const ERROR_MESSAGES = {
   NO_ARTIST: "Artist name is required",
   NO_TITLE: "Title parameter is required",
   INVALID_VOLUME: "Volume must be between 0 and 100",
+  PLAYLIST_CREATION: "Playlist creation error",
 };
 
 // Valid commands for player control
@@ -97,11 +98,11 @@ player.get(
   async (req: Request<{}, {}, {}, Query>, res: Response) => {
     try {
       const { command } = req.query;
-      
+
       if (!command) {
         return handleError(res, ERROR_MESSAGES.NO_COMMAND, HTTP_BAD_REQUEST);
       }
-      
+
       if (!VALID_COMMANDS.includes(command as PlayerCommand)) {
         return handleError(
           res,
@@ -109,7 +110,7 @@ player.get(
           HTTP_BAD_REQUEST,
         );
       }
-      
+
       const playerStatus = await MpdConnection.steuerung(command as string);
       sendResponse(res, { status: playerStatus });
     } catch (error) {
@@ -122,11 +123,11 @@ player.get(
   async (req: Request<{}, {}, {}, Query>, res: Response) => {
     try {
       const { vol } = req.query;
-      
+
       if (!vol) {
         return handleError(res, ERROR_MESSAGES.NO_VOLUME, HTTP_BAD_REQUEST);
       }
-      
+
       const volume = parseInt(vol as string);
       if (isNaN(volume) || volume < 0 || volume > 100) {
         return handleError(
@@ -135,7 +136,7 @@ player.get(
           HTTP_BAD_REQUEST,
         );
       }
-      
+
       await MpdConnection.setVol(volume.toString());
       sendResponse(res, { volume });
     } catch (error) {
@@ -147,7 +148,7 @@ player.get("/currentsong", async (_req: Request, res: Response) => {
   try {
     const song = await MpdConnection.getCurrentSong();
     const currentSong: CurrentSong = {
-      file: song.file || "",
+      file: song.uri || "",
       artist: song.artist,
       title: song.title,
       album: song.album,
@@ -158,29 +159,12 @@ player.get("/currentsong", async (_req: Request, res: Response) => {
     handleError(res, ERROR_MESSAGES.NO_SONG);
   }
 });
-player.get(
-  "/getStation",
-  async (req: Request<{}, {}, {}, Query>, res: Response) => {
-    try {
-      const { playlistname, stationname } = req.query;
-
-      // ###############   read playlist, getUrlbyName and play station
-      const playerStatus = await MpdConnection.getStation(
-        playlistname as string,
-        stationname as string,
-      );
-      sendResponse(res, { status: playerStatus });
-    } catch (error) {
-      handleError(res, ERROR_MESSAGES.INVALID_URL);
-    }
-  },
-);
 
 player.get("/listplaylists", async (_req: Request, res: Response) => {
   try {
     const list = await MpdConnection.getAllPlaylists();
     const playlists = list.map((item) => item.playlist);
-    sendResponse<{name:string, uri:string}[]>(res, playlists);
+    sendResponse<{ name: string; uri: string }[]>(res, playlists);
   } catch (error) {
     handleError(res, ERROR_MESSAGES.NO_PLAYLIST);
   }
@@ -304,6 +288,68 @@ player.get(
     }
   },
 );
+
+player.post("/createPlaylist", async (req: Request, res: Response) => {
+  try {
+    const { name, type } = req.body;
+
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({
+        error: "Playlist name is required",
+      });
+    }
+    if (!type || typeof type !== "string") {
+      return res.status(400).json({
+        error: "Playlist Type is required",
+      });
+    }
+    const playlist = await MpdConnection.createPlaylist(name, type);
+
+    sendResponse(res, playlist);
+  } catch (error) {
+    handleError(res, ERROR_MESSAGES.PLAYLIST_CREATION);
+  }
+});
+
+player.get("/addTrackToPlaylist", async (req: Request, res: Response) => {
+  try {
+    const { playlisturi, trackuri } = req.query;
+
+    const playlistUriValue =
+      typeof playlisturi === "string"
+        ? playlisturi
+        : Array.isArray(playlisturi) && typeof playlisturi[0] === "string"
+          ? playlisturi[0]
+          : undefined;
+
+    const trackUriValue =
+      typeof trackuri === "string"
+        ? trackuri
+        : Array.isArray(trackuri) && typeof trackuri[0] === "string"
+          ? trackuri[0]
+          : undefined;
+
+    if (!playlistUriValue) {
+      return res.status(400).json({
+        error: "Playlist URI is required",
+      });
+    }
+    if (!trackUriValue) {
+      return res.status(400).json({
+        error: "Track is required",
+      });
+    }
+
+    const playlist = await MpdConnection.addTrackToPLaylist(
+      playlistUriValue,
+      trackUriValue,
+    );
+
+    sendResponse(res, playlist);
+  } catch (error) {
+    handleError(res, error instanceof Error ? error.message:ERROR_MESSAGES.PLAYLIST_CREATION);
+  }
+});
 
 player.get(
   "/search",
