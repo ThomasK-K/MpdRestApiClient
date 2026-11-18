@@ -311,6 +311,50 @@ player.post("/createPlaylist", async (req: Request, res: Response) => {
   }
 });
 
+player.get("/removeTrackFromPlaylist", async (req: Request, res: Response) => {
+  try {
+    const { playlisturi, trackuri } = req.query;
+
+    const playlistUriValue =
+      typeof playlisturi === "string"
+        ? playlisturi
+        : Array.isArray(playlisturi) && typeof playlisturi[0] === "string"
+          ? playlisturi[0]
+          : undefined;
+
+    const trackUriValue =
+      typeof trackuri === "string"
+        ? trackuri
+        : Array.isArray(trackuri) && typeof trackuri[0] === "string"
+          ? trackuri[0]
+          : undefined;
+
+    if (!playlistUriValue) {
+      return res.status(400).json({
+        error: "Playlist URI is required",
+      });
+    }
+    if (!trackUriValue) {
+      return res.status(400).json({
+        error: "Track is required",
+      });
+    }
+
+    const playlist = await MpdConnection.modifyPlaylist(
+      playlistUriValue,
+      trackUriValue,
+      "delete",
+    );
+
+    sendResponse(res, playlist);
+  } catch (error) {
+    handleError(
+      res,
+      error instanceof Error ? error.message : ERROR_MESSAGES.PLAYLIST_CREATION,
+    );
+  }
+});
+
 player.get("/addTrackToPlaylist", async (req: Request, res: Response) => {
   try {
     const { playlisturi, trackuri } = req.query;
@@ -340,14 +384,18 @@ player.get("/addTrackToPlaylist", async (req: Request, res: Response) => {
       });
     }
 
-    const playlist = await MpdConnection.addTrackToPLaylist(
+    const playlist = await MpdConnection.modifyPlaylist(
       playlistUriValue,
       trackUriValue,
+      "add",
     );
 
     sendResponse(res, playlist);
   } catch (error) {
-    handleError(res, error instanceof Error ? error.message:ERROR_MESSAGES.PLAYLIST_CREATION);
+    handleError(
+      res,
+      error instanceof Error ? error.message : ERROR_MESSAGES.PLAYLIST_CREATION,
+    );
   }
 });
 

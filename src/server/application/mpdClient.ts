@@ -10,6 +10,8 @@ dotenv.config();
 
 const debug = require("debug")("mpdClient");
 
+type ModeOptions = "clear" | "add" | "delete";
+
 type m3ustation = {
   name: string;
   url: string;
@@ -140,43 +142,51 @@ export class MpdConnection {
     });
   }
 
-  static async addTrackToPLaylist(
+  static async modifyPlaylist(
     playlistUri: Mopidy.URI,
     trackUri: string,
-  ): Promise<Mopidy.models.Playlist | null|unknown> {
+    mode: ModeOptions,
+  ): Promise<Mopidy.models.Playlist | null | unknown> {
     // Lookup
 
     try {
-      
       const pl = await MpdConnection.getClient().playlists.lookup({
-            uri: playlistUri,
-          });
-      
-          if (!pl) {
-            throw new Error("Playlist nicht gefunden");
-          }
-          const tracks = await MpdConnection.getClient().playlists.getItems({uri:pl.uri});
-          // Track ergänzen
-      
-          const updatedPlaylist: Mopidy.models.Playlist = {
-            ...pl,
-            tracks: [
-               ...pl.tracks,
-              {
-                __model__: "Track",
-                uri: trackUri,
-              } as unknown as Mopidy.models.Track,
-            ],
-          };
-          return await MpdConnection.getClient().playlists.save({
-            playlist: updatedPlaylist,
-          });
+        uri: playlistUri,
+      });
+
+      if (!pl) {
+        throw new Error("Playlist nicht gefunden");
+      }
+      const tracks = await MpdConnection.getClient().playlists.getItems({
+        uri: pl.uri,
+      });
+      let updatedPlaylist;
+      // Track ergänzen
+      if (mode === "add") {
+        updatedPlaylist = {
+          ...pl,
+          tracks: [
+            ...pl.tracks ??[],
+            {
+              __model__: "Track",
+              uri: trackUri,
+            } as unknown as Mopidy.models.Track,
+          ],
+        };
+      } else if (mode === "delete") {
+        updatedPlaylist = {
+          ...pl,
+          tracks: pl.tracks.filter((tr) => tr.uri !== trackUri),
+        };
+      }
+      return await MpdConnection.getClient().playlists.save({
+        playlist: updatedPlaylist,
+      });
     } catch (error: unknown) {
-     throw new Error(
+      throw new Error(
         error instanceof Error ? error.message : "Problem beim Hizufügen",
       );
     }
-    
   }
 
   static async getStatus(): Promise<Status> {
