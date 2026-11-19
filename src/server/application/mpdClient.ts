@@ -166,7 +166,7 @@ export class MpdConnection {
         updatedPlaylist = {
           ...pl,
           tracks: [
-            ...pl.tracks ??[],
+            ...(pl.tracks ?? []),
             {
               __model__: "Track",
               uri: trackUri,

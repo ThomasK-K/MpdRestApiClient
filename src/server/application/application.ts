@@ -63,6 +63,17 @@ export class Application {
     // Body Parser konfigurieren
     this._app.use(bodyParser.json());
     this._app.use(bodyParser.urlencoded({ extended: true }));
+
+
+    // CORS konfigurieren
+this._app.use(cors({
+    origin: 'https://192.168.10.122:8080',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
+
+
     this._app.use(express.json());
 
     // Füge Middleware für Cache-Control hinzu
@@ -79,6 +90,7 @@ export class Application {
     this._app.set("trust proxy", true); // wichtig, falls hinter Proxy
     // this._app.use(this.ipWhitelist.bind(this)); // Middleware zur IP-Whitelist
     // this._app.use(cors(corsOptions));
+
 
     // Log the routes
     this._app.use((req: Request, res: Response, next: NextFunction) => {
